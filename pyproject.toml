@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "ops-cli"
+version = "0.1.0"
+description = ""
+authors = ["None"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.13"
+docker = "^7.1.0"
+kubernetes = "^31.0.0"
+paramiko = "^3.5.0"
+jira = "^3.8.0"
+atlassian-python-api = "^3.41.18"
+psycopg2-binary = "^2.9.10"
+typer = "^0.15.1"
+python-compose = "^1.2.0"
+pygithub = "^2.5.0"
+opensearch-py = "^2.8.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

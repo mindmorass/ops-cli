@@ -1,0 +1,147 @@
+import importlib
+import os
+import pkgutil
+from pathlib import Path
+from typing import Dict, List, Optional, Type, Union
+
+from pydantic import BaseModel
+
+from apis.confluence_api import ConfluenceApi
+from apis.docker_api import DockerApi
+from apis.github_api import GithubApi
+from apis.google_docs_api import GoogleDocsApi
+from apis.google_sheets_api import GoogleSheetsApi
+from apis.jira_api import JiraApi
+from apis.kubernetes_api import KubernetesApi
+from apis.ssh_api import SSHApi
+from core.interfaces import ClientInterface
+from core.plugin import PluginRegistry
+
+
+class ClientConfig(BaseModel):
+    """Configuration model for client APIs"""
+
+    # GitHub configuration
+    github_token: Optional[str] = None
+
+    # Jira configuration
+    jira_url: Optional[str] = None
+    jira_username: Optional[str] = None
+    jira_token: Optional[str] = None
+
+    # Confluence configuration
+    confluence_url: Optional[str] = None
+    confluence_username: Optional[str] = None
+    confluence_token: Optional[str] = None
+
+    # Google configuration
+    google_credentials_file: Optional[str] = None
+
+    # Kubernetes configuration
+    kube_config_path: Optional[str] = None
+    kube_context: Optional[str] = None
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+
+
+class ClientApi(ClientInterface):
+    def __init__(self, config: Optional[ClientConfig] = None):
+        """
+        Initialize client API wrapper
+        Args:
+            config: Optional configuration object
+        """
+        self.config = config or ClientConfig()
+        self._apis: Dict[str, object] = {}
+        self._load_plugins()
+
+    @property
+    def github(self) -> GithubApi:
+        """Get GitHub API client"""
+        if "github" not in self._apis:
+            if not self.config.github_token:
+                raise ValueError("GitHub token not configured")
+            self._apis["github"] = GithubApi(token=self.config.github_token)
+        return self._apis["github"]
+
+    @property
+    def jira(self) -> JiraApi:
+        """Get Jira API client"""
+        if "jira" not in self._apis:
+            if not all(
+                [
+                    self.config.jira_url,
+                    self.config.jira_username,
+                    self.config.jira_token,
+                ]
+            ):
+                raise ValueError("Jira configuration incomplete")
+            self._apis["jira"] = JiraApi(
+                server_url=self.config.jira_url,
+                username=self.config.jira_username,
+                token=self.config.jira_token,
+            )
+        return self._apis["jira"]
+
+    @property
+    def confluence(self) -> ConfluenceApi:
+        """Get Confluence API client"""
+        if "confluence" not in self._apis:
+            if not all(
+                [
+                    self.config.confluence_url,
+                    self.config.confluence_username,
+                    self.config.confluence_token,
+                ]
+            ):
+                raise ValueError("Confluence configuration incomplete")
+            self._apis["confluence"] = ConfluenceApi(
+                url=self.config.confluence_url,
+                username=self.config.confluence_username,
+                api_token=self.config.confluence_token,
+                cloud=True,
+            )
+        return self._apis["confluence"]
+
+    @property
+    def docker(self) -> DockerApi:
+        """Get Docker API client"""
+        if "docker" not in self._apis:
+            self._apis["docker"] = DockerApi()
+        return self._apis["docker"]
+
+    @property
+    def kubernetes(self) -> KubernetesApi:
+        """Get Kubernetes API client"""
+        if "kubernetes" not in self._apis:
+            self._apis["kubernetes"] = KubernetesApi(
+                context_name=self.config.kube_context
+            )
+        return self._apis["kubernetes"]
+
+    def ssh(self, hostname: str, **kwargs) -> SSHApi:
+        """
+        Get SSH API client
+        Args:
+            hostname: Remote host to connect to
+            **kwargs: Additional SSH configuration
+        """
+        return SSHApi(hostname=hostname, **kwargs)
+
+    def _load_plugins(self) -> None:
+        """Load plugins from the plugins directory"""
+        plugins_dir = Path(__file__).parent.parent / "plugins"
+        if not plugins_dir.exists():
+            return
+
+        registry = PluginRegistry.get_instance()
+        for finder, name, _ in pkgutil.iter_modules([str(plugins_dir)]):
+            try:
+                module = importlib.import_module(f"plugins.{name}")
+                if hasattr(module, "setup_plugin"):
+                    plugin = module.setup_plugin(self)
+                    registry.register_plugin(plugin)
+            except Exception as e:
+                print(f"Failed to load plugin {name}: {str(e)}")
