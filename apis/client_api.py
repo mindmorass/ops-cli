@@ -55,7 +55,47 @@ class ClientApi(ClientInterface):
         """
         self.config = config or ClientConfig()
         self._apis: Dict[str, object] = {}
+        self._extensions: Dict[str, object] = {}
         self._load_plugins()
+        self._load_extensions()
+
+    def register_extension(self, name: str, extension: object) -> None:
+        """
+        Register a new extension
+        Args:
+            name: Extension name
+            extension: Extension instance
+        """
+        if name in self._extensions:
+            raise ValueError(f"Extension {name} already registered")
+        self._extensions[name] = extension
+
+    def get_extension(self, name: str) -> Optional[object]:
+        """
+        Get a registered extension
+        Args:
+            name: Extension name
+        """
+        return self._extensions.get(name)
+
+    def list_extensions(self) -> List[str]:
+        """Get list of registered extension names"""
+        return list(self._extensions.keys())
+
+    def _load_extensions(self) -> None:
+        """Load extensions from the extensions directory"""
+        extensions_dir = Path(__file__).parent.parent / "extensions"
+        if not extensions_dir.exists():
+            return
+
+        for finder, name, _ in pkgutil.iter_modules([str(extensions_dir)]):
+            try:
+                module = importlib.import_module(f"extensions.{name}")
+                if hasattr(module, "setup_extension"):
+                    extension = module.setup_extension(self)
+                    self.register_extension(name, extension)
+            except Exception as e:
+                print(f"Failed to load extension {name}: {str(e)}")
 
     @property
     def github(self) -> GithubApi:

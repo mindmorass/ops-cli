@@ -5,7 +5,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from commands import confluence, github, jira, system
+from commands import cli, confluence, github, jira
 from core.client import get_client
 from core.plugin import PluginRegistry
 
@@ -20,7 +20,7 @@ PluginRegistry.get_instance(app)
 app.add_typer(github.app, name="github")
 app.add_typer(jira.app, name="jira")
 app.add_typer(confluence.app, name="confluence")
-app.add_typer(system.app, name="system")
+app.add_typer(cli.app, name="client")
 
 
 def main():

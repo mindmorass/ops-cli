@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Union
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build

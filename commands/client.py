@@ -30,12 +30,15 @@ def list_plugins():
 def list_extensions():
     """List loaded extensions"""
     client = get_client()
-    extensions = client.list_extensions()
+    try:
+        extensions = client.list_extensions()
 
-    if not extensions:
-        console.print("[yellow]No extensions loaded[/]")
-        return
+        if not extensions:
+            console.print("[yellow]No extensions loaded[/]")
+            return
 
-    console.print("\n[bold green]Loaded Extensions:[/]")
-    for ext in extensions:
-        console.print(f"  [blue]{ext}[/]")
+        console.print("\n[bold green]Loaded Extensions:[/]")
+        for ext in extensions:
+            console.print(f"  [blue]{ext}[/]")
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/]")

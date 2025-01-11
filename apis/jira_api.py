@@ -1,5 +1,4 @@
-from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 from jira import JIRA, JIRAError
 
@@ -158,6 +157,44 @@ class JiraApi:
         except JIRAError as e:
             raise Exception(f"Failed to delete issue: {str(e)}")
 
+    def validate_jql(self, jql: str) -> bool:
+        """
+        Validate JQL query using Jira's JQL validation endpoint.
+        Args:
+            jql: JQL query string to validate
+        Returns:
+            bool: True if valid, False otherwise
+        """
+        try:
+            # Try cloud endpoint first
+            cloud_endpoint = f"{self.server_url}/rest/api/3/jql/parse"
+            response = self.client._session.post(
+                cloud_endpoint,
+                json={"queries": [jql]},
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                return all(not query.get("errors") for query in data.get("queries", []))
+
+            # Fall back to server endpoint
+            server_endpoint = f"{self.server_url}/rest/api/2/search"
+            response = self.client._session.post(
+                server_endpoint,
+                json={
+                    "jql": jql,
+                    "maxResults": 1,  # Minimize data transfer
+                    "fields": ["key"],  # Only request key field
+                },
+            )
+
+            return response.status_code == 200
+
+        except Exception as e:
+            print(f"Error validating JQL: {str(e)}")
+            # If we can't validate, assume it's valid and let the search handle errors
+            return True
+
     def search_issues(
         self,
         jql: str,
@@ -171,6 +208,9 @@ class JiraApi:
             max_results: Maximum number of results
             fields: List of fields to return
         """
+        if not self.validate_jql(jql):
+            raise ValueError("Invalid JQL query")
+
         try:
             issues = self.client.search_issues(
                 jql_str=jql,
@@ -256,19 +296,19 @@ class JiraApi:
             "key": issue.key,
             "summary": fields.summary,
             "status": fields.status.name,
-            "created": fields.created,
-            "updated": fields.updated,
-            "project": {
-                "key": fields.project.key,
-                "name": fields.project.name,
-            },
-            "issue_type": {
-                "name": fields.issuetype.name,
-                "subtask": fields.issuetype.subtask,
-            },
         }
 
         # Optional fields
+        if hasattr(fields, "issue_type") and fields.issue_type:
+            formatted["issue_type"] = {
+                "name": fields.issue_type.name,
+                "subtask": fields.issue_type.subtask,
+            }
+        if hasattr(fields, "project") and fields.project:
+            formatted["project"] = {
+                "key": fields.project.key,
+                "name": fields.project.name,
+            }
         if hasattr(fields, "description") and fields.description:
             formatted["description"] = fields.description
 
@@ -277,22 +317,15 @@ class JiraApi:
 
         if hasattr(fields, "assignee") and fields.assignee:
             formatted["assignee"] = {
-                "name": fields.assignee.name,
+                "account_id": fields.assignee.accountId,
                 "display_name": fields.assignee.displayName,
                 "email": fields.assignee.emailAddress,
             }
 
-        if hasattr(fields, "reporter") and fields.reporter:
-            formatted["reporter"] = {
-                "name": fields.reporter.name,
-                "display_name": fields.reporter.displayName,
-                "email": fields.reporter.emailAddress,
-            }
-
-        if hasattr(fields, "labels"):
-            formatted["labels"] = fields.labels
-
-        if hasattr(fields, "components"):
-            formatted["components"] = [c.name for c in fields.components]
+        # Check for created and updated fields
+        if hasattr(fields, "created"):
+            formatted["created"] = fields.created
+        if hasattr(fields, "updated"):
+            formatted["updated"] = fields.updated
 
         return formatted
