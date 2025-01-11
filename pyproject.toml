@@ -17,6 +17,7 @@ typer = "^0.15.1"
 python-compose = "^1.2.0"
 pygithub = "^2.5.0"
 opensearch-py = "^2.8.0"
+google-api-python-client = "^2.158.0"
 
 
 [build-system]
