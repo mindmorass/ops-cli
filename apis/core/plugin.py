@@ -2,7 +2,7 @@ from typing import Dict, List, Optional
 
 import typer
 
-from core.plugin_base import PluginBase
+from apis.core.plugin_base import PluginBase
 
 
 class PluginRegistry:

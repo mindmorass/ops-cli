@@ -7,6 +7,8 @@ from typing import Dict, List, Optional, Type, Union
 from pydantic import BaseModel
 
 from apis.confluence_api import ConfluenceApi
+from apis.core.interfaces import ClientInterface
+from apis.core.plugin import PluginRegistry
 from apis.docker_api import DockerApi
 from apis.github_api import GithubApi
 from apis.google_docs_api import GoogleDocsApi
@@ -14,8 +16,6 @@ from apis.google_sheets_api import GoogleSheetsApi
 from apis.jira_api import JiraApi
 from apis.kubernetes_api import KubernetesApi
 from apis.ssh_api import SSHApi
-from core.interfaces import ClientInterface
-from core.plugin import PluginRegistry
 
 
 class ClientConfig(BaseModel):
