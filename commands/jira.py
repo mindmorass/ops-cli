@@ -24,3 +24,20 @@ def jql(query: str):
         print(json.dumps(issues, indent=4))
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/]")
+
+
+@app.command()
+def my_open_issues():
+    """List my open Jira issues"""
+    client = get_client()
+    try:
+        with Halo(
+            text="Searching my open Jira issues\n", spinner="dots", stream=sys.stderr
+        ) as spinner:
+            issues = client.jira.search_issues(
+                jql="assignee = currentUser() AND status != Done"
+            )
+            spinner.stop()
+        console.print(json.dumps(issues, indent=4))
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
