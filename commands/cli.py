@@ -24,6 +24,7 @@ def list_plugins():
         console.print(f"\n[bold blue]{plugin_name}[/]")
         for cmd_name, cmd in plugin.commands.items():
             console.print(f"  [cyan]{cmd_name}[/]: {cmd.help}")
+    return
 
 
 @app.command()

@@ -5,7 +5,7 @@ from rich.console import Console
 from rich.table import Table
 
 from apis.client_api import ClientApi
-from core.plugin_base import PluginBase
+from apis.core.plugin_base import PluginBase
 
 
 class ResourceManagerPlugin(PluginBase):

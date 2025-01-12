@@ -18,6 +18,8 @@ python-compose = "^1.2.0"
 pygithub = "^2.5.0"
 opensearch-py = "^2.8.0"
 google-api-python-client = "^2.158.0"
+inquirerpy = "^0.3.4"
+halo = "^0.0.31"
 
 
 [build-system]

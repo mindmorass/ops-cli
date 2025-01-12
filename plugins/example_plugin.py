@@ -3,7 +3,7 @@ from typing import Optional
 import typer
 
 from apis.client_api import ClientApi
-from core.plugin_base import PluginBase
+from apis.core.plugin_base import PluginBase
 
 
 class ExamplePlugin(PluginBase):

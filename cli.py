@@ -11,16 +11,19 @@ from commands import cli, confluence, github, jira
 
 # Create main app and console
 app = typer.Typer(no_args_is_help=True)
+core_commands = typer.Typer(no_args_is_help=True)
 console = Console()
 
 # Initialize plugin registry with main app
 PluginRegistry.get_instance(app)
 
+
 # Add command groups
-app.add_typer(github.app, name="github")
-app.add_typer(jira.app, name="jira")
-app.add_typer(confluence.app, name="confluence")
-app.add_typer(cli.app, name="client")
+core_commands.add_typer(github.app, name="github")
+core_commands.add_typer(jira.app, name="jira")
+core_commands.add_typer(confluence.app, name="confluence")
+core_commands.add_typer(cli.app, name="client")
+app.add_typer(core_commands, name="core", help="Commands for core APIs")
 
 
 def main():
