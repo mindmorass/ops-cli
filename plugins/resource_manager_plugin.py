@@ -29,6 +29,12 @@ class ResourceManagerPlugin(PluginBase):
             help="List Kubernetes resources",
         )
 
+        self.register_command(
+            name="pull-requests",
+            callback=self.list_pull_requests,
+            help="List GitHub pull requests",
+        )
+
     def list_resources(
         self,
         namespace: str = typer.Option(None, help="Kubernetes namespace"),
@@ -134,6 +140,55 @@ class ResourceManagerPlugin(PluginBase):
                     resource.status,
                     str(resource.metadata["replicas"]),
                     resource.metadata["image"],
+                )
+
+            console.print(table)
+
+        except Exception as e:
+            typer.echo(f"Error: {str(e)}", err=True)
+            raise typer.Exit(1)
+
+    def list_pull_requests(
+        self,
+        repo: str = typer.Argument(..., help="Repository (org/repo format)"),
+        state: str = typer.Option("open", help="PR state (open/closed/all)"),
+        sort: str = typer.Option(
+            "created", help="Sort field (created/updated/popularity)"
+        ),
+        direction: str = typer.Option("desc", help="Sort direction (asc/desc)"),
+    ):
+        """List GitHub pull requests"""
+        try:
+            org_name = repo.split("/")[0]
+            repo_name = repo.split("/")[1]
+
+            pull_requests = self.client.github.get_repo_pull_requests(
+                org_name=org_name,
+                repo_name=repo_name,
+                state=state,
+                sort=sort,
+                direction=direction,
+            )
+
+            console = Console()
+            table = Table(title=f"Pull Requests - {repo}")
+            table.add_column("Number")
+            table.add_column("Title")
+            table.add_column("State")
+            table.add_column("Author")
+            table.add_column("Created")
+            table.add_column("Updated")
+            table.add_column("Mergeable")
+
+            for pr in pull_requests:
+                table.add_row(
+                    f"#{pr['number']}",
+                    pr["title"],
+                    f"[{'green' if pr['state'] == 'open' else 'red'}]{pr['state']}[/]",
+                    pr["user"]["login"],
+                    pr["created_at"].split("T")[0],
+                    pr["updated_at"].split("T")[0],
+                    str(pr.get("mergeable", "unknown")),
                 )
 
             console.print(table)
