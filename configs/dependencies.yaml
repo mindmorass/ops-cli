@@ -1,0 +1,12 @@
+homebrew:
+  # Formulae
+  - name: kubectl
+  - name: awscli
+  - name: azure-cli
+  - name: helm
+  - name: gh
+  - name: basti
+  - name: hugo
+  - name: tfenv
+  - name: google-cloud-sdk
+    cask: true
