@@ -1,5 +1,7 @@
-from typing import Dict, List, Optional, Union
+import os
+from typing import Dict, List, Optional
 
+import requests
 from atlassian import Confluence
 from atlassian.errors import ApiError
 
@@ -22,6 +24,12 @@ class ConfluenceApi:
             api_token: API token (for cloud)
             cloud: Whether this is a cloud instance
         """
+        self.url = url
+        self.username = username
+        self.password = password
+        self.api_token = api_token
+        self.cloud = cloud
+
         try:
             if cloud:
                 if not api_token:
@@ -30,6 +38,7 @@ class ConfluenceApi:
                     url=url,
                     username=username,
                     password=api_token,
+                    api_version="cloud",
                     cloud=True,
                 )
             else:
@@ -316,3 +325,43 @@ class ConfluenceApi:
             )
 
         return formatted
+
+    def export_page_as_pdf(
+        self,
+        page_id: str,
+        output_path: Optional[str] = None,
+    ) -> str:
+        """
+        Export a Confluence page as PDF
+        Args:
+            page_id: Page ID to export
+            output_path: Optional path to save PDF (default: page_title.pdf)
+        Returns:
+            Path to saved PDF file
+        """
+        if not self.client.api_version == "cloud":
+            raise Exception("This method is only supported for Confluence Cloud.")
+
+        try:
+            # Get page info for title
+            page = self.client.get_page_by_id(page_id)
+            title = page["title"]
+
+            if not output_path:
+                download_path = f"{os.path.expanduser("~")}/Downloads"
+                output_path = f"{title.replace(' ', '_')}.pdf"
+                pdf_full_path = os.path.join(download_path, output_path)
+
+            pdf = self.client.export_page(page_id)
+
+            # Check if the PDF response is valid
+            if not pdf:
+                raise Exception("No PDF data returned.")
+
+            with open(pdf_full_path, "wb") as pdf_file:
+                pdf_file.write(pdf)
+
+            return output_path  # Return the path to the saved PDF
+
+        except Exception as e:
+            raise Exception(f"Failed to export page as PDF: {str(e)}")
