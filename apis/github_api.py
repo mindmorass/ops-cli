@@ -539,3 +539,166 @@ class GithubApi:
                 for asset in release.get_assets()
             ],
         }
+
+    def get_repo_pull_requests(
+        self,
+        org_name: str,
+        repo_name: str,
+        state: str = "open",
+        sort: str = "created",
+        direction: str = "desc",
+    ) -> List[Dict]:
+        """
+        Get pull requests for a repository
+        Args:
+            org_name: Organization name
+            repo_name: Repository name
+            state: State of PRs to return ('open', 'closed', 'all')
+            sort: Sort field ('created', 'updated', 'popularity', 'long-running')
+            direction: Sort direction ('asc' or 'desc')
+        """
+        try:
+            repo = self.client.get_repo(f"{org_name}/{repo_name}")
+            pulls = repo.get_pulls(
+                state=state,
+                sort=sort,
+                direction=direction,
+            )
+            return [
+                {
+                    "number": pr.number,
+                    "title": pr.title,
+                    "body": pr.body,
+                    "state": pr.state,
+                    "created_at": pr.created_at.isoformat(),
+                    "updated_at": pr.updated_at.isoformat(),
+                    "closed_at": pr.closed_at.isoformat() if pr.closed_at else None,
+                    "merged_at": pr.merged_at.isoformat() if pr.merged_at else None,
+                    "merge_commit_sha": pr.merge_commit_sha,
+                    "url": pr.html_url,
+                    "draft": pr.draft,
+                    "mergeable": pr.mergeable,
+                    "mergeable_state": pr.mergeable_state,
+                    "merged": pr.merged,
+                    "comments": pr.comments,
+                    "review_comments": pr.review_comments,
+                    "commits": pr.commits,
+                    "additions": pr.additions,
+                    "deletions": pr.deletions,
+                    "changed_files": pr.changed_files,
+                    "labels": [label.name for label in pr.labels],
+                    "base": {
+                        "ref": pr.base.ref,
+                        "sha": pr.base.sha,
+                        "repo": pr.base.repo.full_name,
+                    },
+                    "head": {
+                        "ref": pr.head.ref,
+                        "sha": pr.head.sha,
+                        "repo": pr.head.repo.full_name if pr.head.repo else None,
+                    },
+                    "user": {
+                        "login": pr.user.login,
+                        "url": pr.user.html_url,
+                        "type": pr.user.type,
+                    },
+                }
+                for pr in pulls
+            ]
+        except Exception as e:
+            raise Exception(f"Error getting pull requests: {str(e)}")
+
+    def create_pull_request(
+        self,
+        org_name: str,
+        repo_name: str,
+        title: str,
+        body: str,
+        head: str,
+        base: str = "main",
+        draft: bool = False,
+        maintainer_can_modify: bool = True,
+    ) -> Dict:
+        """
+        Create a pull request
+        Args:
+            org_name: Organization name
+            repo_name: Repository name
+            title: PR title
+            body: PR description
+            head: Head branch
+            base: Base branch (default: main)
+            draft: Create as draft PR
+            maintainer_can_modify: Allow maintainers to modify the PR
+        """
+        try:
+            repo = self.client.get_repo(f"{org_name}/{repo_name}")
+            pr = repo.create_pull(
+                title=title,
+                body=body,
+                head=head,
+                base=base,
+                draft=draft,
+                maintainer_can_modify=maintainer_can_modify,
+            )
+            return {
+                "number": pr.number,
+                "title": pr.title,
+                "body": pr.body,
+                "state": pr.state,
+                "created_at": pr.created_at.isoformat(),
+                "updated_at": pr.updated_at.isoformat(),
+                "url": pr.html_url,
+                "draft": pr.draft,
+                "mergeable": pr.mergeable,
+                "mergeable_state": pr.mergeable_state,
+                "base": {
+                    "ref": pr.base.ref,
+                    "sha": pr.base.sha,
+                    "repo": pr.base.repo.full_name,
+                },
+                "head": {
+                    "ref": pr.head.ref,
+                    "sha": pr.head.sha,
+                    "repo": pr.head.repo.full_name if pr.head.repo else None,
+                },
+                "user": {
+                    "login": pr.user.login,
+                    "url": pr.user.html_url,
+                    "type": pr.user.type,
+                },
+            }
+        except Exception as e:
+            raise Exception(f"Error creating pull request: {str(e)}")
+
+    def get_file_contents(
+        self,
+        repo_name: str,
+        file_path: str,
+        branch: str = "main",
+        org_name: Optional[str] = None,
+    ) -> str:
+        """
+        Get the contents of a file in a repository.
+        Args:
+            repo_name: Repository name
+            file_path: Path to the file in the repository
+            branch: Branch name (default: main)
+            org_name: Optional organization name
+        Returns:
+            The contents of the file as a string.
+        """
+        try:
+            if org_name:
+                full_name = f"{org_name}/{repo_name}"
+            else:
+                user = self.client.get_user()
+                full_name = f"{user.login}/{repo_name}"
+
+            repo = self.client.get_repo(full_name)
+            contents = repo.get_contents(file_path, ref=branch)
+            return contents.decoded_content.decode(
+                "utf-8"
+            )  # Decode the content to a string
+        except Exception as e:
+            raise Exception(f"Error fetching file contents: {str(e)}")
