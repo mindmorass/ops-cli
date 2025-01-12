@@ -191,3 +191,42 @@ class DockerComposeApi:
 
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to list services: {e.stderr}")
+
+    def rm(
+        self,
+        services: Optional[List[str]] = None,
+        force: bool = False,
+        stop: bool = False,
+        volumes: bool = False,
+    ) -> Dict:
+        """
+        Remove stopped containers
+        Args:
+            services: List of service names (default: all services)
+            force: Force removal of containers
+            stop: Stop containers before removal
+            volumes: Remove anonymous volumes
+        """
+        try:
+            cmd = ["rm"]
+            if force:
+                cmd.append("-f")
+            if stop:
+                cmd.append("-s")
+            if volumes:
+                cmd.append("-v")
+
+            # Add services
+            if services:
+                cmd.extend(services)
+
+            result = self._run_compose_command(cmd)
+
+            return {
+                "status": "success",
+                "output": result.stdout,
+                "services": services or self.list_services(),
+            }
+
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to remove containers: {e.stderr}")

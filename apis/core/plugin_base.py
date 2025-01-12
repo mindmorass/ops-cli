@@ -1,6 +1,6 @@
 from typing import Any, Callable, Dict
 
-import typer
+from .interfaces import ClientInterface
 
 
 class PluginCommand:

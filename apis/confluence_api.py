@@ -1,12 +1,21 @@
+"""
+Confluence API
+
+This module provides a client API for interacting with Confluence.
+"""
+
 import os
 from typing import Dict, List, Optional
 
-import requests
 from atlassian import Confluence
 from atlassian.errors import ApiError
 
 
 class ConfluenceApi:
+    """
+    Confluence API wrapper
+    """
+
     def __init__(
         self,
         url: str,

@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Dict, List, Optional, Union
 
 from opensearchpy import OpenSearch, RequestsHttpConnection
@@ -8,31 +7,55 @@ from opensearchpy.exceptions import NotFoundError, RequestError
 class OpenSearchApi:
     def __init__(
         self,
-        hosts: List[Dict[str, Union[str, int]]] = None,
-        username: str = "admin",
-        password: str = "admin",
+        hosts: List[str],
+        username: Optional[str] = None,
+        password: Optional[str] = None,
         use_ssl: bool = True,
-        verify_certs: bool = False,
-        ssl_show_warn: bool = False,
+        verify_certs: bool = True,
+        ca_certs: Optional[str] = None,
     ):
         """
         Initialize OpenSearch client
         Args:
-            hosts: List of host dictionaries [{"host": "localhost", "port": 9200}]
-            username: OpenSearch username
-            password: OpenSearch password
-            use_ssl: Whether to use SSL/TLS
-            verify_certs: Whether to verify SSL certificates
-            ssl_show_warn: Whether to show SSL warnings
+            hosts: List of OpenSearch hosts
+            username: Optional username for authentication
+            password: Optional password for authentication
+            use_ssl: Use SSL/TLS
+            verify_certs: Verify SSL certificates
+            ca_certs: Path to CA certificate
         """
-        self.client = OpenSearch(
-            hosts=hosts or [{"host": "localhost", "port": 9200}],
-            http_auth=(username, password),
-            use_ssl=use_ssl,
-            verify_certs=verify_certs,
-            ssl_show_warn=ssl_show_warn,
-            connection_class=RequestsHttpConnection,
-        )
+        try:
+            auth = (username, password) if username and password else None
+            self.client = OpenSearch(
+                hosts=hosts,
+                http_auth=auth,
+                use_ssl=use_ssl,
+                verify_certs=verify_certs,
+                ca_certs=ca_certs,
+                connection_class=RequestsHttpConnection,
+            )
+        except Exception as e:
+            raise Exception(f"Failed to connect to OpenSearch: {str(e)}")
+
+    # Index operations
+    def list_indices(self, pattern: str = "*") -> List[Dict]:
+        """
+        List indices matching pattern
+        Args:
+            pattern: Index pattern to match
+        """
+        try:
+            response = self.client.indices.get(pattern)
+            return [
+                {
+                    "name": name,
+                    "settings": info["settings"],
+                    "mappings": info["mappings"],
+                }
+                for name, info in response.items()
+            ]
+        except Exception as e:
+            raise Exception(f"Failed to list indices: {str(e)}")
 
     def create_index(
         self,
@@ -41,237 +64,337 @@ class OpenSearchApi:
         settings: Optional[Dict] = None,
     ) -> Dict:
         """
-        Create a new index
+        Create new index
         Args:
-            index_name: Name of the index
-            mappings: Index mappings configuration
-            settings: Index settings configuration
+            index_name: Name of index to create
+            mappings: Optional field mappings
+            settings: Optional index settings
         """
         try:
-            # Default mappings for logs if none provided
-            if not mappings:
-                mappings = {
-                    "properties": {
-                        "timestamp": {"type": "date"},
-                        "level": {"type": "keyword"},
-                        "service": {"type": "keyword"},
-                        "message": {"type": "text"},
-                        "metadata": {"type": "object"},
-                    }
-                }
-
-            body = {
-                "mappings": mappings,
-            }
-
+            body = {}
+            if mappings:
+                body["mappings"] = mappings
             if settings:
                 body["settings"] = settings
 
-            response = self.client.indices.create(
-                index=index_name,
-                body=body,
-            )
+            response = self.client.indices.create(index=index_name, body=body)
             return response
-        except RequestError as e:
+        except Exception as e:
             raise Exception(f"Failed to create index: {str(e)}")
 
-    def write_log(
-        self,
-        index_name: str,
-        level: str,
-        message: str,
-        service: str,
-        metadata: Optional[Dict] = None,
-        timestamp: Optional[datetime] = None,
-    ) -> Dict:
+    def delete_index(self, index_name: str) -> Dict:
         """
-        Write a log entry
+        Delete index
         Args:
-            index_name: Target index name
-            level: Log level (INFO, WARNING, ERROR, etc.)
-            message: Log message
-            service: Service/component name
-            metadata: Additional log metadata
-            timestamp: Log timestamp (defaults to current time)
+            index_name: Name of index to delete
         """
         try:
-            document = {
-                "timestamp": timestamp or datetime.utcnow().isoformat(),
-                "level": level.upper(),
-                "service": service,
-                "message": message,
-                "metadata": metadata or {},
-            }
+            response = self.client.indices.delete(index=index_name)
+            return response
+        except Exception as e:
+            raise Exception(f"Failed to delete index: {str(e)}")
 
+    # Document operations
+    def index_document(
+        self,
+        index_name: str,
+        document: Dict,
+        doc_id: Optional[str] = None,
+        refresh: bool = False,
+    ) -> Dict:
+        """
+        Index a document
+        Args:
+            index_name: Target index name
+            document: Document to index
+            doc_id: Optional document ID
+            refresh: Refresh index immediately
+        """
+        try:
             response = self.client.index(
                 index=index_name,
                 body=document,
+                id=doc_id,
+                refresh=refresh,
             )
             return response
         except Exception as e:
-            raise Exception(f"Failed to write log: {str(e)}")
+            raise Exception(f"Failed to index document: {str(e)}")
 
-    def write_logs(
+    def get_document(self, index_name: str, doc_id: str) -> Dict:
+        """
+        Get document by ID
+        Args:
+            index_name: Index name
+            doc_id: Document ID
+        """
+        try:
+            response = self.client.get(index=index_name, id=doc_id)
+            return response
+        except NotFoundError:
+            raise Exception(f"Document not found: {doc_id}")
+        except Exception as e:
+            raise Exception(f"Failed to get document: {str(e)}")
+
+    def update_document(
         self,
         index_name: str,
-        logs: List[Dict],
+        doc_id: str,
+        document: Dict,
+        refresh: bool = False,
     ) -> Dict:
         """
-        Write multiple log entries in bulk
+        Update document
         Args:
-            index_name: Target index name
-            logs: List of log dictionaries
+            index_name: Index name
+            doc_id: Document ID
+            document: Updated document fields
+            refresh: Refresh index immediately
         """
         try:
-            operations = []
-            for log in logs:
-                # Add index operation
-                operations.append({"index": {"_index": index_name}})
-                # Add log document
-                operations.append(
-                    {
-                        "timestamp": log.get("timestamp")
-                        or datetime.utcnow().isoformat(),
-                        "level": log["level"].upper(),
-                        "service": log["service"],
-                        "message": log["message"],
-                        "metadata": log.get("metadata", {}),
-                    }
-                )
-
-            response = self.client.bulk(
-                operations=operations,
-                refresh=True,
+            response = self.client.update(
+                index=index_name,
+                id=doc_id,
+                body={"doc": document},
+                refresh=refresh,
             )
             return response
+        except NotFoundError:
+            raise Exception(f"Document not found: {doc_id}")
         except Exception as e:
-            raise Exception(f"Failed to write logs: {str(e)}")
+            raise Exception(f"Failed to update document: {str(e)}")
 
-    def search_logs(
-        self,
-        index_name: str,
-        query: Optional[Dict] = None,
-        service: Optional[str] = None,
-        level: Optional[str] = None,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        size: int = 100,
-        sort_order: str = "desc",
-    ) -> List[Dict]:
+    def delete_document(
+        self, index_name: str, doc_id: str, refresh: bool = False
+    ) -> Dict:
         """
-        Search logs with filters
+        Delete document
         Args:
-            index_name: Index to search
-            query: Custom query DSL
-            service: Filter by service name
-            level: Filter by log level
-            start_time: Filter logs after this time
-            end_time: Filter logs before this time
-            size: Maximum number of results
-            sort_order: Sort order (asc/desc)
+            index_name: Index name
+            doc_id: Document ID
+            refresh: Refresh index immediately
         """
         try:
-            if query is None:
-                # Build query from parameters
-                must_conditions = []
+            response = self.client.delete(
+                index=index_name,
+                id=doc_id,
+                refresh=refresh,
+            )
+            return response
+        except NotFoundError:
+            raise Exception(f"Document not found: {doc_id}")
+        except Exception as e:
+            raise Exception(f"Failed to delete document: {str(e)}")
 
-                if service:
-                    must_conditions.append({"term": {"service": service}})
-                if level:
-                    must_conditions.append({"term": {"level": level.upper()}})
-                if start_time or end_time:
-                    time_range = {}
-                    if start_time:
-                        time_range["gte"] = start_time.isoformat()
-                    if end_time:
-                        time_range["lte"] = end_time.isoformat()
-                    must_conditions.append({"range": {"timestamp": time_range}})
-
-                query = {
-                    "bool": (
-                        {"must": must_conditions}
-                        if must_conditions
-                        else {"match_all": {}}
-                    )
-                }
-
-            body = {
-                "query": query,
-                "size": size,
-                "sort": [{"timestamp": {"order": sort_order}}],
-            }
+    # Search operations
+    def search(
+        self,
+        index_name: str,
+        query: Dict,
+        size: int = 10,
+        from_: int = 0,
+        sort: Optional[List[Dict]] = None,
+        source: Optional[Union[List[str], bool]] = None,
+    ) -> Dict:
+        """
+        Search documents
+        Args:
+            index_name: Index to search
+            query: Search query
+            size: Number of results
+            from_: Starting offset
+            sort: Optional sort criteria
+            source: Fields to return
+        """
+        try:
+            body = {"query": query}
+            if sort:
+                body["sort"] = sort
+            if source is not None:
+                body["_source"] = source
 
             response = self.client.search(
                 index=index_name,
                 body=body,
-            )
-
-            return [hit["_source"] for hit in response["hits"]["hits"]]
-        except Exception as e:
-            raise Exception(f"Failed to search logs: {str(e)}")
-
-    def delete_old_logs(
-        self,
-        index_name: str,
-        older_than: datetime,
-    ) -> Dict:
-        """
-        Delete logs older than specified time
-        Args:
-            index_name: Index name
-            older_than: Delete logs older than this time
-        """
-        try:
-            query = {"range": {"timestamp": {"lt": older_than.isoformat()}}}
-
-            response = self.client.delete_by_query(
-                index=index_name,
-                body={"query": query},
+                size=size,
+                from_=from_,
             )
             return response
         except Exception as e:
-            raise Exception(f"Failed to delete logs: {str(e)}")
+            raise Exception(f"Search failed: {str(e)}")
 
-    def get_index_stats(self, index_name: str) -> Dict:
+    def count(self, index_name: str, query: Optional[Dict] = None) -> int:
         """
-        Get index statistics
+        Count documents
         Args:
             index_name: Index name
+            query: Optional query to filter documents
         """
         try:
-            return self.client.indices.stats(index=index_name)
-        except NotFoundError:
-            raise Exception(f"Index {index_name} not found")
+            body = {"query": query} if query else None
+            response = self.client.count(index=index_name, body=body)
+            return response["count"]
         except Exception as e:
-            raise Exception(f"Failed to get index stats: {str(e)}")
+            raise Exception(f"Count failed: {str(e)}")
 
-    def create_index_template(
+    # Bulk operations
+    def bulk_index(
         self,
-        template_name: str,
-        index_patterns: List[str],
-        mappings: Dict,
-        settings: Optional[Dict] = None,
+        index_name: str,
+        documents: List[Dict],
+        refresh: bool = False,
     ) -> Dict:
         """
-        Create an index template
+        Bulk index documents
         Args:
-            template_name: Template name
-            index_patterns: List of index patterns
-            mappings: Template mappings
-            settings: Template settings
+            index_name: Target index
+            documents: List of documents to index
+            refresh: Refresh index immediately
         """
         try:
+            body = []
+            for doc in documents:
+                body.extend(
+                    [
+                        {"index": {"_index": index_name}},
+                        doc,
+                    ]
+                )
+            response = self.client.bulk(body=body, refresh=refresh)
+            return response
+        except Exception as e:
+            raise Exception(f"Bulk indexing failed: {str(e)}")
+
+    # =========================================================================
+    # Dashboard Index Pattern Operations
+    # =========================================================================
+
+    def create_index_pattern(
+        self,
+        title: str,
+        time_field_name: str = "@timestamp",
+        allow_hidden_indices: bool = False,
+    ) -> Dict:
+        """
+        Create an index pattern in OpenSearch Dashboards
+        Args:
+            title: Pattern title (e.g., 'logs-*')
+            time_field_name: Default timestamp field
+            allow_hidden_indices: Include hidden indices
+        """
+        try:
+            # Index patterns are stored in .kibana index
             body = {
-                "index_patterns": index_patterns,
-                "mappings": mappings,
+                "type": "index-pattern",
+                "index-pattern": {
+                    "title": title,
+                    "timeFieldName": time_field_name,
+                    "allowHiddenIndices": allow_hidden_indices,
+                    "fields": "[]",  # Will be populated by OpenSearch
+                },
             }
 
-            if settings:
-                body["settings"] = settings
-
-            return self.client.indices.put_template(
-                name=template_name,
+            response = self.client.index(
+                index=".opensearch_dashboards",
                 body=body,
+                id=f"index-pattern:{title}",
+                refresh=True,
             )
+            return response
         except Exception as e:
-            raise Exception(f"Failed to create template: {str(e)}")
+            raise Exception(f"Failed to create index pattern: {str(e)}")
+
+    def get_index_pattern(self, pattern_id: str) -> Dict:
+        """
+        Get index pattern details
+        Args:
+            pattern_id: Index pattern ID
+        """
+        try:
+            response = self.client.get(
+                index=".opensearch_dashboards",
+                id=f"index-pattern:{pattern_id}",
+            )
+            return response["_source"]["index-pattern"]
+        except Exception as e:
+            raise Exception(f"Failed to get index pattern: {str(e)}")
+
+    def update_index_pattern(
+        self,
+        pattern_id: str,
+        title: Optional[str] = None,
+        time_field_name: Optional[str] = None,
+        allow_hidden_indices: Optional[bool] = None,
+    ) -> Dict:
+        """
+        Update index pattern settings
+        Args:
+            pattern_id: Index pattern ID
+            title: New pattern title
+            time_field_name: New timestamp field
+            allow_hidden_indices: Include hidden indices
+        """
+        try:
+            # Get current pattern
+            current = self.get_index_pattern(pattern_id)
+
+            # Update fields if provided
+            update_body = {
+                "index-pattern": {
+                    **current,
+                    **({"title": title} if title else {}),
+                    **({"timeFieldName": time_field_name} if time_field_name else {}),
+                    **(
+                        {"allowHiddenIndices": allow_hidden_indices}
+                        if allow_hidden_indices is not None
+                        else {}
+                    ),
+                }
+            }
+
+            response = self.client.update(
+                index=".opensearch_dashboards",
+                id=f"index-pattern:{pattern_id}",
+                body={"doc": update_body},
+                refresh=True,
+            )
+            return response
+        except Exception as e:
+            raise Exception(f"Failed to update index pattern: {str(e)}")
+
+    def delete_index_pattern(self, pattern_id: str) -> Dict:
+        """
+        Delete index pattern
+        Args:
+            pattern_id: Index pattern ID
+        """
+        try:
+            response = self.client.delete(
+                index=".opensearch_dashboards",
+                id=f"index-pattern:{pattern_id}",
+                refresh=True,
+            )
+            return response
+        except Exception as e:
+            raise Exception(f"Failed to delete index pattern: {str(e)}")
+
+    def list_index_patterns(self) -> List[Dict]:
+        """List all index patterns"""
+        try:
+            query = {"query": {"term": {"type": "index-pattern"}}}
+
+            response = self.client.search(
+                index=".opensearch_dashboards",
+                body=query,
+                size=1000,  # Adjust if you have more patterns
+            )
+
+            patterns = []
+            for hit in response["hits"]["hits"]:
+                pattern = hit["_source"]["index-pattern"]
+                pattern["id"] = hit["_id"].replace("index-pattern:", "")
+                patterns.append(pattern)
+
+            return patterns
+        except Exception as e:
+            raise Exception(f"Failed to list index patterns: {str(e)}")

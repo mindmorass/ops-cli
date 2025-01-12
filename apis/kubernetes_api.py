@@ -1,8 +1,8 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 from kubernetes import client, config
+from kubernetes.client import ApiClient
 from kubernetes.client.rest import ApiException
-from kubernetes.config.kube_config import list_kube_config_contexts, load_kube_config
 
 
 class KubernetesApi:
@@ -12,277 +12,255 @@ class KubernetesApi:
         Args:
             context_name: Optional Kubernetes context name
         """
-        if context_name:
-            load_kube_config(context=context_name)
-        else:
-            load_kube_config()
-
-        self.apps_v1 = client.AppsV1Api()
-        self.core_v1 = client.CoreV1Api()
-
-    @staticmethod
-    def list_contexts() -> List[Dict]:
-        """List available Kubernetes contexts from kubeconfig"""
         try:
-            contexts, active_context = list_kube_config_contexts()
-            return [
-                {
-                    "name": ctx["name"],
-                    "cluster": ctx["context"]["cluster"],
-                    "user": ctx["context"]["user"],
-                    "is_active": ctx == active_context,
-                }
-                for ctx in contexts
-            ]
+            if context_name:
+                config.load_kube_config(context=context_name)
+            else:
+                config.load_kube_config()
+
+            self.core_v1 = client.CoreV1Api()
+            self.apps_v1 = client.AppsV1Api()
+            self.batch_v1 = client.BatchV1Api()
+            self.networking_v1 = client.NetworkingV1Api()
+            self.api_client = ApiClient()
+
         except Exception as e:
-            raise Exception(f"Error listing contexts: {str(e)}")
+            raise Exception(f"Failed to initialize Kubernetes client: {str(e)}")
 
-    def list_pods(self, namespace: str = "default") -> List[Dict]:
-        """List pods in a namespace"""
+    # Pod operations
+    def list_pods(
+        self, namespace: str = "default", label_selector: Optional[str] = None
+    ) -> List[Dict]:
+        """List pods in namespace"""
         try:
-            pods = self.core_v1.list_namespaced_pod(namespace)
-            return [
-                {
-                    "name": pod.metadata.name,
-                    "namespace": pod.metadata.namespace,
-                    "status": pod.status.phase,
-                    "ip": pod.status.pod_ip,
-                    "node": pod.spec.node_name,
-                    "containers": [
-                        {
-                            "name": container.name,
-                            "image": container.image,
-                            "ready": any(
-                                status.ready
-                                for status in pod.status.container_statuses
-                                if status.name == container.name
-                            ),
-                        }
-                        for container in pod.spec.containers
-                    ],
-                }
-                for pod in pods.items
-            ]
+            pods = self.core_v1.list_namespaced_pod(
+                namespace=namespace, label_selector=label_selector
+            )
+            return self._format_k8s_list(pods)
         except ApiException as e:
-            raise Exception(f"Error listing pods: {str(e)}")
+            raise Exception(f"Failed to list pods: {str(e)}")
+
+    def get_pod(self, name: str, namespace: str = "default") -> Dict:
+        """Get pod details"""
+        try:
+            pod = self.core_v1.read_namespaced_pod(name=name, namespace=namespace)
+            return self._format_k8s_obj(pod)
+        except ApiException as e:
+            raise Exception(f"Failed to get pod: {str(e)}")
+
+    def create_pod(self, pod_manifest: Dict, namespace: str = "default") -> Dict:
+        """Create pod from manifest"""
+        try:
+            pod = self.core_v1.create_namespaced_pod(
+                namespace=namespace, body=pod_manifest
+            )
+            return self._format_k8s_obj(pod)
+        except ApiException as e:
+            raise Exception(f"Failed to create pod: {str(e)}")
 
     def delete_pod(self, name: str, namespace: str = "default") -> Dict:
-        """Delete a pod"""
+        """Delete pod"""
         try:
-            self.core_v1.delete_namespaced_pod(name, namespace)
-            return {"message": f"Pod {name} deleted successfully"}
+            result = self.core_v1.delete_namespaced_pod(name=name, namespace=namespace)
+            return self._format_k8s_obj(result)
         except ApiException as e:
-            raise Exception(f"Error deleting pod: {str(e)}")
+            raise Exception(f"Failed to delete pod: {str(e)}")
 
-    def list_deployments(self, namespace: str = "default") -> List[Dict]:
-        """List deployments in a namespace"""
+    # Deployment operations
+    def list_deployments(
+        self, namespace: str = "default", label_selector: Optional[str] = None
+    ) -> List[Dict]:
+        """List deployments in namespace"""
         try:
-            deployments = self.apps_v1.list_namespaced_deployment(namespace)
-            return [
-                {
-                    "name": dep.metadata.name,
-                    "namespace": dep.metadata.namespace,
-                    "replicas": dep.spec.replicas,
-                    "available": dep.status.available_replicas,
-                    "ready": dep.status.ready_replicas,
-                    "updated": dep.status.updated_replicas,
-                    "image": dep.spec.template.spec.containers[0].image,
-                }
-                for dep in deployments.items
-            ]
+            deployments = self.apps_v1.list_namespaced_deployment(
+                namespace=namespace, label_selector=label_selector
+            )
+            return self._format_k8s_list(deployments)
         except ApiException as e:
-            raise Exception(f"Error listing deployments: {str(e)}")
+            raise Exception(f"Failed to list deployments: {str(e)}")
+
+    def get_deployment(self, name: str, namespace: str = "default") -> Dict:
+        """Get deployment details"""
+        try:
+            deployment = self.apps_v1.read_namespaced_deployment(
+                name=name, namespace=namespace
+            )
+            return self._format_k8s_obj(deployment)
+        except ApiException as e:
+            raise Exception(f"Failed to get deployment: {str(e)}")
 
     def create_deployment(
-        self,
-        name: str,
-        image: str,
-        namespace: str = "default",
-        replicas: int = 1,
-        labels: Optional[Dict[str, str]] = None,
+        self, deployment_manifest: Dict, namespace: str = "default"
     ) -> Dict:
-        """Create a deployment"""
+        """Create deployment from manifest"""
         try:
-            labels = labels or {"app": name}
-            deployment = client.V1Deployment(
-                metadata=client.V1ObjectMeta(name=name, labels=labels),
-                spec=client.V1DeploymentSpec(
-                    replicas=replicas,
-                    selector=client.V1LabelSelector(match_labels=labels),
-                    template=client.V1PodTemplateSpec(
-                        metadata=client.V1ObjectMeta(labels=labels),
-                        spec=client.V1PodSpec(
-                            containers=[
-                                client.V1Container(
-                                    name=name,
-                                    image=image,
-                                )
-                            ]
-                        ),
-                    ),
-                ),
+            deployment = self.apps_v1.create_namespaced_deployment(
+                namespace=namespace, body=deployment_manifest
             )
-
-            self.apps_v1.create_namespaced_deployment(namespace, deployment)
-            return {"message": f"Deployment {name} created successfully"}
+            return self._format_k8s_obj(deployment)
         except ApiException as e:
-            raise Exception(f"Error creating deployment: {str(e)}")
+            raise Exception(f"Failed to create deployment: {str(e)}")
+
+    def update_deployment(
+        self, name: str, deployment_manifest: Dict, namespace: str = "default"
+    ) -> Dict:
+        """Update deployment"""
+        try:
+            deployment = self.apps_v1.patch_namespaced_deployment(
+                name=name, namespace=namespace, body=deployment_manifest
+            )
+            return self._format_k8s_obj(deployment)
+        except ApiException as e:
+            raise Exception(f"Failed to update deployment: {str(e)}")
 
     def delete_deployment(self, name: str, namespace: str = "default") -> Dict:
-        """Delete a deployment"""
+        """Delete deployment"""
         try:
-            self.apps_v1.delete_namespaced_deployment(name, namespace)
-            return {"message": f"Deployment {name} deleted successfully"}
-        except ApiException as e:
-            raise Exception(f"Error deleting deployment: {str(e)}")
-
-    def scale_deployment(
-        self, name: str, replicas: int, namespace: str = "default"
-    ) -> Dict:
-        """Scale a deployment"""
-        try:
-            scale = client.V1Scale(
-                metadata=client.V1ObjectMeta(name=name, namespace=namespace),
-                spec=client.V1ScaleSpec(replicas=replicas),
+            result = self.apps_v1.delete_namespaced_deployment(
+                name=name, namespace=namespace
             )
-            self.apps_v1.patch_namespaced_deployment_scale(name, namespace, scale)
-            return {"message": f"Deployment {name} scaled to {replicas} replicas"}
+            return self._format_k8s_obj(result)
         except ApiException as e:
-            raise Exception(f"Error scaling deployment: {str(e)}")
+            raise Exception(f"Failed to delete deployment: {str(e)}")
 
-    def list_statefulsets(self, namespace: str = "default") -> List[Dict]:
-        """List StatefulSets in a namespace"""
+    # Service operations
+    def list_services(
+        self, namespace: str = "default", label_selector: Optional[str] = None
+    ) -> List[Dict]:
+        """List services in namespace"""
         try:
-            statefulsets = self.apps_v1.list_namespaced_stateful_set(namespace)
-            return [
-                {
-                    "name": sts.metadata.name,
-                    "namespace": sts.metadata.namespace,
-                    "replicas": sts.spec.replicas,
-                    "ready_replicas": sts.status.ready_replicas,
-                    "current_replicas": sts.status.current_replicas,
-                    "updated_replicas": sts.status.updated_replicas,
-                    "image": sts.spec.template.spec.containers[0].image,
-                }
-                for sts in statefulsets.items
-            ]
-        except ApiException as e:
-            raise Exception(f"Error listing StatefulSets: {str(e)}")
-
-    def create_statefulset(
-        self,
-        name: str,
-        image: str,
-        namespace: str = "default",
-        replicas: int = 1,
-        labels: Optional[Dict[str, str]] = None,
-    ) -> Dict:
-        """Create a StatefulSet"""
-        try:
-            labels = labels or {"app": name}
-            statefulset = client.V1StatefulSet(
-                metadata=client.V1ObjectMeta(name=name, labels=labels),
-                spec=client.V1StatefulSetSpec(
-                    replicas=replicas,
-                    selector=client.V1LabelSelector(match_labels=labels),
-                    service_name=name,
-                    template=client.V1PodTemplateSpec(
-                        metadata=client.V1ObjectMeta(labels=labels),
-                        spec=client.V1PodSpec(
-                            containers=[
-                                client.V1Container(
-                                    name=name,
-                                    image=image,
-                                )
-                            ]
-                        ),
-                    ),
-                ),
+            services = self.core_v1.list_namespaced_service(
+                namespace=namespace, label_selector=label_selector
             )
-
-            self.apps_v1.create_namespaced_stateful_set(namespace, statefulset)
-            return {"message": f"StatefulSet {name} created successfully"}
+            return self._format_k8s_list(services)
         except ApiException as e:
-            raise Exception(f"Error creating StatefulSet: {str(e)}")
+            raise Exception(f"Failed to list services: {str(e)}")
 
-    def delete_statefulset(self, name: str, namespace: str = "default") -> Dict:
-        """Delete a StatefulSet"""
+    def get_service(self, name: str, namespace: str = "default") -> Dict:
+        """Get service details"""
         try:
-            self.apps_v1.delete_namespaced_stateful_set(name, namespace)
-            return {"message": f"StatefulSet {name} deleted successfully"}
-        except ApiException as e:
-            raise Exception(f"Error deleting StatefulSet: {str(e)}")
-
-    def scale_statefulset(
-        self, name: str, replicas: int, namespace: str = "default"
-    ) -> Dict:
-        """Scale a StatefulSet"""
-        try:
-            scale = client.V1Scale(
-                metadata=client.V1ObjectMeta(name=name, namespace=namespace),
-                spec=client.V1ScaleSpec(replicas=replicas),
+            service = self.core_v1.read_namespaced_service(
+                name=name, namespace=namespace
             )
-            self.apps_v1.patch_namespaced_stateful_set_scale(name, namespace, scale)
-            return {"message": f"StatefulSet {name} scaled to {replicas} replicas"}
+            return self._format_k8s_obj(service)
         except ApiException as e:
-            raise Exception(f"Error scaling StatefulSet: {str(e)}")
+            raise Exception(f"Failed to get service: {str(e)}")
 
-    def list_daemonsets(self, namespace: str = "default") -> List[Dict]:
-        """List DaemonSets in a namespace"""
-        try:
-            daemonsets = self.apps_v1.list_namespaced_daemon_set(namespace)
-            return [
-                {
-                    "name": ds.metadata.name,
-                    "namespace": ds.metadata.namespace,
-                    "desired_number": ds.status.desired_number_scheduled,
-                    "current_number": ds.status.current_number_scheduled,
-                    "ready_number": ds.status.number_ready,
-                    "available_number": ds.status.number_available,
-                    "image": ds.spec.template.spec.containers[0].image,
-                }
-                for ds in daemonsets.items
-            ]
-        except ApiException as e:
-            raise Exception(f"Error listing DaemonSets: {str(e)}")
-
-    def create_daemonset(
-        self,
-        name: str,
-        image: str,
-        namespace: str = "default",
-        labels: Optional[Dict[str, str]] = None,
+    def create_service(
+        self, service_manifest: Dict, namespace: str = "default"
     ) -> Dict:
-        """Create a DaemonSet"""
+        """Create service from manifest"""
         try:
-            labels = labels or {"app": name}
-            daemonset = client.V1DaemonSet(
-                metadata=client.V1ObjectMeta(name=name, labels=labels),
-                spec=client.V1DaemonSetSpec(
-                    selector=client.V1LabelSelector(match_labels=labels),
-                    template=client.V1PodTemplateSpec(
-                        metadata=client.V1ObjectMeta(labels=labels),
-                        spec=client.V1PodSpec(
-                            containers=[
-                                client.V1Container(
-                                    name=name,
-                                    image=image,
-                                )
-                            ]
-                        ),
-                    ),
-                ),
+            service = self.core_v1.create_namespaced_service(
+                namespace=namespace, body=service_manifest
             )
-
-            self.apps_v1.create_namespaced_daemon_set(namespace, daemonset)
-            return {"message": f"DaemonSet {name} created successfully"}
+            return self._format_k8s_obj(service)
         except ApiException as e:
-            raise Exception(f"Error creating DaemonSet: {str(e)}")
+            raise Exception(f"Failed to create service: {str(e)}")
 
-    def delete_daemonset(self, name: str, namespace: str = "default") -> Dict:
-        """Delete a DaemonSet"""
+    def delete_service(self, name: str, namespace: str = "default") -> Dict:
+        """Delete service"""
         try:
-            self.apps_v1.delete_namespaced_daemon_set(name, namespace)
-            return {"message": f"DaemonSet {name} deleted successfully"}
+            result = self.core_v1.delete_namespaced_service(
+                name=name, namespace=namespace
+            )
+            return self._format_k8s_obj(result)
         except ApiException as e:
-            raise Exception(f"Error deleting DaemonSet: {str(e)}")
+            raise Exception(f"Failed to delete service: {str(e)}")
+
+    # ConfigMap operations
+    def list_configmaps(
+        self, namespace: str = "default", label_selector: Optional[str] = None
+    ) -> List[Dict]:
+        """List configmaps in namespace"""
+        try:
+            configmaps = self.core_v1.list_namespaced_config_map(
+                namespace=namespace, label_selector=label_selector
+            )
+            return self._format_k8s_list(configmaps)
+        except ApiException as e:
+            raise Exception(f"Failed to list configmaps: {str(e)}")
+
+    def get_configmap(self, name: str, namespace: str = "default") -> Dict:
+        """Get configmap details"""
+        try:
+            configmap = self.core_v1.read_namespaced_config_map(
+                name=name, namespace=namespace
+            )
+            return self._format_k8s_obj(configmap)
+        except ApiException as e:
+            raise Exception(f"Failed to get configmap: {str(e)}")
+
+    def create_configmap(
+        self, configmap_manifest: Dict, namespace: str = "default"
+    ) -> Dict:
+        """Create configmap from manifest"""
+        try:
+            configmap = self.core_v1.create_namespaced_config_map(
+                namespace=namespace, body=configmap_manifest
+            )
+            return self._format_k8s_obj(configmap)
+        except ApiException as e:
+            raise Exception(f"Failed to create configmap: {str(e)}")
+
+    def delete_configmap(self, name: str, namespace: str = "default") -> Dict:
+        """Delete configmap"""
+        try:
+            result = self.core_v1.delete_namespaced_config_map(
+                name=name, namespace=namespace
+            )
+            return self._format_k8s_obj(result)
+        except ApiException as e:
+            raise Exception(f"Failed to delete configmap: {str(e)}")
+
+    # Secret operations
+    def list_secrets(
+        self, namespace: str = "default", label_selector: Optional[str] = None
+    ) -> List[Dict]:
+        """List secrets in namespace"""
+        try:
+            secrets = self.core_v1.list_namespaced_secret(
+                namespace=namespace, label_selector=label_selector
+            )
+            return self._format_k8s_list(secrets)
+        except ApiException as e:
+            raise Exception(f"Failed to list secrets: {str(e)}")
+
+    def get_secret(self, name: str, namespace: str = "default") -> Dict:
+        """Get secret details"""
+        try:
+            secret = self.core_v1.read_namespaced_secret(name=name, namespace=namespace)
+            return self._format_k8s_obj(secret)
+        except ApiException as e:
+            raise Exception(f"Failed to get secret: {str(e)}")
+
+    def create_secret(self, secret_manifest: Dict, namespace: str = "default") -> Dict:
+        """Create secret from manifest"""
+        try:
+            secret = self.core_v1.create_namespaced_secret(
+                namespace=namespace, body=secret_manifest
+            )
+            return self._format_k8s_obj(secret)
+        except ApiException as e:
+            raise Exception(f"Failed to create secret: {str(e)}")
+
+    def delete_secret(self, name: str, namespace: str = "default") -> Dict:
+        """Delete secret"""
+        try:
+            result = self.core_v1.delete_namespaced_secret(
+                name=name, namespace=namespace
+            )
+            return self._format_k8s_obj(result)
+        except ApiException as e:
+            raise Exception(f"Failed to delete secret: {str(e)}")
+
+    def _format_k8s_obj(self, obj: object) -> Dict:
+        """Convert Kubernetes object to dictionary"""
+        return self.api_client.sanitize_for_serialization(obj)
+
+    def _format_k8s_list(self, obj_list: object) -> List[Dict]:
+        """Convert list of Kubernetes objects to list of dictionaries"""
+        items = []
+        for item in obj_list.items:
+            items.append(self._format_k8s_obj(item))
+        return items

@@ -1,8 +1,12 @@
+"""
+Client API
+This module provides a client API for interacting with various APIs.
+"""
+
 import importlib
-import os
 import pkgutil
 from pathlib import Path
-from typing import Dict, List, Optional, Type, Union
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -11,8 +15,6 @@ from apis.core.interfaces import ClientInterface
 from apis.core.plugin import PluginRegistry
 from apis.docker_api import DockerApi
 from apis.github_api import GithubApi
-from apis.google_docs_api import GoogleDocsApi
-from apis.google_sheets_api import GoogleSheetsApi
 from apis.jira_api import JiraApi
 from apis.kubernetes_api import KubernetesApi
 from apis.ssh_api import SSHApi
@@ -41,12 +43,12 @@ class ClientConfig(BaseModel):
     kube_config_path: Optional[str] = None
     kube_context: Optional[str] = None
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-
 
 class ClientApi(ClientInterface):
+    """
+    Client API wrapper
+    """
+
     def __init__(self, config: Optional[ClientConfig] = None):
         """
         Initialize client API wrapper
