@@ -7,7 +7,7 @@ from rich.console import Console
 
 from apis.core.client import get_client
 from apis.core.plugin import PluginRegistry
-from commands import cli, confluence, github, jira
+from commands import cli, confluence, github, jira, logging
 
 # Create main app and console
 app = typer.Typer(no_args_is_help=True)
@@ -23,6 +23,7 @@ core_commands.add_typer(github.app, name="github")
 core_commands.add_typer(jira.app, name="jira")
 core_commands.add_typer(confluence.app, name="confluence")
 core_commands.add_typer(cli.app, name="client")
+core_commands.add_typer(logging.app, name="logging")
 app.add_typer(core_commands, name="core", help="Commands for core APIs")
 
 

@@ -14,12 +14,12 @@ jira = "^3.8.0"
 atlassian-python-api = "^3.41.18"
 psycopg2-binary = "^2.9.10"
 typer = "^0.15.1"
-python-compose = "^1.2.0"
 pygithub = "^2.5.0"
 opensearch-py = "^2.8.0"
 google-api-python-client = "^2.158.0"
 inquirerpy = "^0.3.4"
 halo = "^0.0.31"
+pydantic = "^2.10.5"
 
 
 [build-system]
