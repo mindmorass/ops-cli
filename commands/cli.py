@@ -43,3 +43,11 @@ def list_extensions():
             console.print(f"  [blue]{ext}[/]")
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/]")
+
+
+@app.command()
+def env():
+    """List environment variables"""
+    client = get_client()
+    client.export_config()
+    console.print(client.config)
