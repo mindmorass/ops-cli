@@ -1,35 +1,25 @@
+"""Client initialization and management"""
+
 import os
 from typing import Optional
 
 from apis.client_api import ClientApi, ClientConfig
 
+_client: Optional[ClientApi] = None
+
 
 def get_client() -> ClientApi:
     """Get or create client instance"""
-    global _client, _plugins_loaded
+    global _client
+
     if _client is None:
-        # Load config from environment
-        config = ClientConfig(
-            github_token=os.getenv("GITHUB_TOKEN"),
-            jira_url=os.getenv("JIRA_URL"),
-            jira_username=os.getenv("JIRA_USERNAME"),
-            jira_token=os.getenv("JIRA_TOKEN"),
-            confluence_url=os.getenv("CONFLUENCE_URL"),
-            confluence_username=os.getenv("CONFLUENCE_USERNAME"),
-            confluence_token=os.getenv("CONFLUENCE_TOKEN"),
-            kube_config_path=os.getenv("KUBE_CONFIG_PATH"),
-            kube_context=os.getenv("KUBE_CONTEXT"),
-        )
+        # Load config if exists
+        config = None
+        config_file = os.environ.get("OPS_CLI_CONFIG")
+        if config_file and os.path.exists(config_file):
+            config = ClientConfig()
+            config.load_config(config_file)
+
         _client = ClientApi(config)
 
-        # Load plugins only once
-        if not _plugins_loaded:
-            _client._load_plugins()
-            _plugins_loaded = True
-
     return _client
-
-
-# Initialize globals
-_client: Optional[ClientApi] = None
-_plugins_loaded: bool = False

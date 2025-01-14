@@ -1,6 +1,9 @@
-from typing import Any, Callable, Dict
+from typing import TYPE_CHECKING, Any, Callable, Dict
 
 from .interfaces import ClientInterface
+
+if TYPE_CHECKING:
+    from apis.core.client import ClientApi
 
 
 class PluginCommand:
@@ -32,8 +35,13 @@ class PluginBase:
 
     @property
     def name(self) -> str:
-        """Plugin name"""
-        return self.__class__.__name__.lower().replace("plugin", "")
+        """Plugin name - derived from class name"""
+        # Remove 'plugin' suffix if present and convert to lowercase
+        name = self.__class__.__name__.lower()
+        if name.endswith("plugin"):
+            name = name[:-6]  # Remove 'plugin' suffix
+        # Convert underscores to dashes for command naming
+        return name.replace("_", "-")
 
     @property
     def commands(self) -> Dict[str, PluginCommand]:

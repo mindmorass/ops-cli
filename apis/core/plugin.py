@@ -6,22 +6,39 @@ from apis.core.plugin_base import PluginBase
 
 
 class PluginRegistry:
-    """Plugin registry"""
+    """Plugin registry singleton"""
 
     _instance = None
+    _app = None  # Store app at class level
 
-    def __init__(self, app: Optional[typer.Typer] = None):
-        if app:
-            self.app = app
+    def __init__(self):
+        """Initialize plugin registry"""
         self._plugins: Dict[str, PluginBase] = {}
-        self._registered_names: set[str] = set()  # Track registered names
 
     @classmethod
-    def get_instance(cls, app: Optional[typer.Typer] = None) -> "PluginRegistry":
+    def initialize(cls, app: typer.Typer) -> None:
+        """
+        Initialize the registry with a Typer app
+        Args:
+            app: Typer app instance
+        """
+        cls._app = app
+
+    @classmethod
+    def get_instance(cls) -> "PluginRegistry":
         """Get or create singleton instance"""
         if cls._instance is None:
-            cls._instance = cls(app)
+            if cls._app is None:
+                raise RuntimeError("PluginRegistry not initialized with app")
+            cls._instance = cls()
         return cls._instance
+
+    @property
+    def app(self) -> typer.Typer:
+        """Get the Typer app"""
+        if self._app is None:
+            raise RuntimeError("PluginRegistry not initialized with app")
+        return self._app
 
     def register_plugin(self, plugin: PluginBase) -> None:
         """
@@ -30,10 +47,8 @@ class PluginRegistry:
             plugin: Plugin instance
         """
         name = plugin.name
-        if name in self._registered_names:  # Check if already registered
-            return  # Silently skip instead of raising error
-
-        self._registered_names.add(name)  # Track registration
+        if name in self._plugins:
+            raise ValueError(f"Plugin {name} already registered")
 
         # Create plugin command group
         plugin_app = typer.Typer(
@@ -48,16 +63,11 @@ class PluginRegistry:
             )
 
         # Add plugin command group to main app
-        if self.app:
-            self.app.add_typer(plugin_app, name=name)
+        self.app.add_typer(plugin_app, name=name)
         self._plugins[name] = plugin
 
     def get_plugin(self, name: str) -> Optional[PluginBase]:
-        """
-        Get plugin by name
-        Args:
-            name: Plugin name
-        """
+        """Get plugin by name"""
         return self._plugins.get(name)
 
     def list_plugins(self) -> List[str]:

@@ -4,10 +4,12 @@ This module provides a client API for interacting with various APIs.
 """
 
 import importlib
+import os
 import pkgutil
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import yaml
 from pydantic import BaseModel
 
 from apis.confluence_api import ConfluenceApi
@@ -24,24 +26,27 @@ class ClientConfig(BaseModel):
     """Configuration model for client APIs"""
 
     # GitHub configuration
-    github_token: Optional[str] = None
+    GITHUB_TOKEN: Optional[str] = None
 
     # Jira configuration
-    jira_url: Optional[str] = None
-    jira_username: Optional[str] = None
-    jira_token: Optional[str] = None
+    JIRA_URL: Optional[str] = None
+    JIRA_USERNAME: Optional[str] = None
+    JIRA_TOKEN: Optional[str] = None
 
     # Confluence configuration
-    confluence_url: Optional[str] = None
-    confluence_username: Optional[str] = None
-    confluence_token: Optional[str] = None
+    CONFLUENCE_URL: Optional[str] = None
+    CONFLUENCE_USERNAME: Optional[str] = None
+    CONFLUENCE_TOKEN: Optional[str] = None
 
     # Google configuration
-    google_credentials_file: Optional[str] = None
+    GOOGLE_CREDENTIALS_FILE: Optional[str] = None
 
     # Kubernetes configuration
-    kube_config_path: Optional[str] = None
-    kube_context: Optional[str] = None
+    KUBE_CONFIG_PATH: Optional[str] = None
+    KUBE_CONTEXT: Optional[str] = None
+
+    # OpenSearch configuration
+    OPENSEARCH_INITIAL_ADMIN_PASSWORD: Optional[str] = None
 
 
 class ClientApi(ClientInterface):
@@ -60,6 +65,17 @@ class ClientApi(ClientInterface):
         self._extensions: Dict[str, object] = {}
         self._load_plugins()
         self._load_extensions()
+
+    def load_config(self, filename: str):
+        """Load client configuration from a file"""
+        with open(filename, "r") as file:
+            self.config = ClientConfig(**yaml.safe_load(file))
+
+    def export_config(self) -> None:
+        """Export client configuration to environment variables"""
+        for field, value in self.config.model_dump().items():
+            if value is not None:
+                os.environ[field] = str(value)
 
     def register_extension(self, name: str, extension: object) -> None:
         """
@@ -178,12 +194,22 @@ class ClientApi(ClientInterface):
         if not plugins_dir.exists():
             return
 
-        registry = PluginRegistry.get_instance()
-        for finder, name, _ in pkgutil.iter_modules([str(plugins_dir)]):
-            try:
-                module = importlib.import_module(f"plugins.{name}")
-                if hasattr(module, "setup_plugin"):
-                    plugin = module.setup_plugin(self)
-                    registry.register_plugin(plugin)
-            except Exception as e:
-                print(f"Failed to load plugin {name}: {str(e)}")
+        try:
+            registry = PluginRegistry.get_instance()
+            loaded_plugins = set()  # Track loaded plugins by module name
+
+            for finder, name, _ in pkgutil.iter_modules([str(plugins_dir)]):
+                try:
+                    if name in loaded_plugins:
+                        continue
+
+                    module = importlib.import_module(f"plugins.{name}")
+                    if hasattr(module, "setup_plugin"):
+                        plugin = module.setup_plugin(self)
+                        registry.register_plugin(plugin)
+                        loaded_plugins.add(name)
+                except Exception as e:
+                    print(f"Failed to load plugin {name}: {str(e)}")
+        except RuntimeError:
+            # Registry not initialized yet - skip plugin loading
+            pass
