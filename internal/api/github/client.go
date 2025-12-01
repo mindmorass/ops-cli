@@ -3,6 +3,8 @@ package github
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 
 	"github.com/google/go-github/v55/github"
 	"golang.org/x/oauth2"
@@ -202,6 +204,73 @@ func (c *Client) ListReleases(owner, repo string, perPage, page int) ([]*github.
 	return releases, nil
 }
 
+// GetLatestRelease gets the latest release for a repository
+func (c *Client) GetLatestRelease(owner, repo string) (*github.RepositoryRelease, error) {
+	release, _, err := c.client.Repositories.GetLatestRelease(c.ctx, owner, repo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest release: %w", err)
+	}
+	return release, nil
+}
+
+// GetReleaseByTag gets a release by tag name
+func (c *Client) GetReleaseByTag(owner, repo, tag string) (*github.RepositoryRelease, error) {
+	release, _, err := c.client.Repositories.GetReleaseByTag(c.ctx, owner, repo, tag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get release by tag: %w", err)
+	}
+	return release, nil
+}
+
+// DownloadReleaseAsset downloads a release asset and returns its content
+// owner and repo are required to download the asset
+func (c *Client) DownloadReleaseAsset(owner, repo string, asset *github.ReleaseAsset) ([]byte, error) {
+	if asset.ID == nil {
+		return nil, fmt.Errorf("asset ID is nil")
+	}
+
+	// Use the GitHub client's DownloadReleaseAsset method
+	rc, redirectURL, err := c.client.Repositories.DownloadReleaseAsset(c.ctx, owner, repo, asset.GetID(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download asset: %w", err)
+	}
+
+	// If redirect URL is provided, download from there
+	if redirectURL != "" {
+		req, err := http.NewRequestWithContext(c.ctx, "GET", redirectURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		var httpClient *http.Client
+		if c.client.Client() != nil {
+			httpClient = c.client.Client()
+		} else {
+			httpClient = http.DefaultClient
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to download asset: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("failed to download asset: status %d", resp.StatusCode)
+		}
+
+		return io.ReadAll(resp.Body)
+	}
+
+	// Otherwise, read from the reader
+	if rc != nil {
+		defer rc.Close()
+		return io.ReadAll(rc)
+	}
+
+	return nil, fmt.Errorf("no download source available")
+}
+
 // ListTags lists tags for a repository
 func (c *Client) ListTags(owner, repo string, perPage, page int) ([]*github.RepositoryTag, error) {
 	opts := &github.ListOptions{
@@ -264,4 +333,53 @@ func (c *Client) ListPackages(owner string, packageType string, perPage, page in
 	}
 
 	return packages, nil
+}
+
+// DeleteRelease deletes a release by ID
+func (c *Client) DeleteRelease(owner, repo string, releaseID int64) error {
+	_, err := c.client.Repositories.DeleteRelease(c.ctx, owner, repo, releaseID)
+	if err != nil {
+		return fmt.Errorf("failed to delete release: %w", err)
+	}
+	return nil
+}
+
+// DeleteTag deletes a tag reference (note: this deletes the ref, not the tag object)
+func (c *Client) DeleteTag(owner, repo, tag string) error {
+	ref := fmt.Sprintf("tags/%s", tag)
+	_, err := c.client.Git.DeleteRef(c.ctx, owner, repo, ref)
+	if err != nil {
+		return fmt.Errorf("failed to delete tag: %w", err)
+	}
+	return nil
+}
+
+// DeleteWorkflowRun deletes a workflow run by ID
+func (c *Client) DeleteWorkflowRun(owner, repo string, runID int64) error {
+	_, err := c.client.Actions.DeleteWorkflowRun(c.ctx, owner, repo, runID)
+	if err != nil {
+		return fmt.Errorf("failed to delete workflow run: %w", err)
+	}
+	return nil
+}
+
+// DeletePackageVersion deletes a specific version of a package
+func (c *Client) DeletePackageVersion(owner, packageType, packageName string, versionID int64) error {
+	_, err := c.client.Organizations.PackageDeleteVersion(c.ctx, owner, packageType, packageName, versionID)
+	if err != nil {
+		// Try as user if org fails
+		_, err = c.client.Users.PackageDeleteVersion(c.ctx, owner, packageType, packageName, versionID)
+		if err != nil {
+			return fmt.Errorf("failed to delete package version: %w", err)
+		}
+	}
+	return nil
+}
+
+// DeletePackage deletes an entire package (all versions)
+// Note: This requires deleting all versions first, then the package
+func (c *Client) DeletePackage(owner, packageType, packageName string) error {
+	// GitHub API doesn't have a direct delete package endpoint
+	// You need to delete all versions first
+	return fmt.Errorf("package deletion requires deleting all versions first. Use DeletePackageVersion for each version")
 }

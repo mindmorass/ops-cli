@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AlecAivazis/survey/v2"
 	ghapi "github.com/google/go-github/v55/github"
 	"github.com/ops-cli/internal/ui"
 	"github.com/spf13/cobra"
@@ -20,25 +21,30 @@ func newRunsCmd() *cobra.Command {
 
 Subcommands:
   list    List workflow runs for a repository
-  get     Get details of a specific workflow run`,
+  get     Get details of a specific workflow run
+  delete  Delete workflow runs interactively`,
 	}
 
 	cmd.AddCommand(newRunsListCmd())
 	cmd.AddCommand(newRunsGetCmd())
+	cmd.AddCommand(newRunsDeleteCmd())
 
 	return cmd
 }
 
 func newRunsListCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "list <owner/repo>",
+		Use:   "list [owner/repo]",
 		Short: "List workflow runs for a repository",
 		Long: `List workflow runs for a repository.
 
+If no repository is provided, it will be detected from the current git directory.
+
 Examples:
   ops-cli github runs list octocat/Hello-World
-  ops-cli github runs list github/docs --format json`,
-		Args: cobra.ExactArgs(1),
+  ops-cli github runs list github/docs --format json
+  ops-cli github runs list  # Uses current git repository`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: runRunsList,
 	}
 
@@ -50,7 +56,11 @@ Examples:
 }
 
 func runRunsList(cmd *cobra.Command, args []string) error {
-	repoPath := args[0]
+	repoPath, err := getRepoArg(args, 0)
+	if err != nil {
+		return err
+	}
+
 	if !strings.Contains(repoPath, "/") {
 		return fmt.Errorf("please provide a repository in format 'owner/repo'")
 	}
@@ -76,7 +86,7 @@ func runRunsList(cmd *cobra.Command, args []string) error {
 	runs, err := client.ListWorkflowRuns(owner, repo, perPage, page)
 	stopSpinner()
 	if err != nil {
-		return fmt.Errorf("failed to list workflow runs: %w", err)
+		return handleGitHubError(err, owner, repo, "List workflow runs")
 	}
 
 	if len(runs) == 0 {
@@ -143,14 +153,17 @@ func runRunsList(cmd *cobra.Command, args []string) error {
 
 func newRunsGetCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "get <owner/repo> <run-id>",
+		Use:   "get [owner/repo] <run-id>",
 		Short: "Get details of a specific workflow run",
 		Long: `Get details of a specific workflow run.
 
+If no repository is provided, it will be detected from the current git directory.
+
 Examples:
   ops-cli github runs get octocat/Hello-World 12345
-  ops-cli github runs get github/docs 67890 --format json`,
-		Args: cobra.ExactArgs(2),
+  ops-cli github runs get github/docs 67890 --format json
+  ops-cli github runs get 12345  # Uses current git repository`,
+		Args: cobra.MinimumNArgs(1),
 		RunE: runRunsGet,
 	}
 
@@ -160,8 +173,22 @@ Examples:
 }
 
 func runRunsGet(cmd *cobra.Command, args []string) error {
-	repoPath := args[0]
-	runIDStr := args[1]
+	var repoPath, runIDStr string
+	var err error
+
+	// Determine if first arg is repo or run-id
+	if len(args) > 1 && strings.Contains(args[0], "/") {
+		// First arg is a repository
+		repoPath = args[0]
+		runIDStr = args[1]
+	} else {
+		// First arg is run-id, detect repo from git
+		repoPath, err = getRepoArg(args, 0)
+		if err != nil {
+			return err
+		}
+		runIDStr = args[0]
+	}
 
 	if !strings.Contains(repoPath, "/") {
 		return fmt.Errorf("please provide a repository in format 'owner/repo'")
@@ -193,7 +220,7 @@ func runRunsGet(cmd *cobra.Command, args []string) error {
 	runs, err := client.ListWorkflowRuns(owner, repo, 100, 1)
 	stopSpinner()
 	if err != nil {
-		return fmt.Errorf("failed to get workflow run: %w", err)
+		return handleGitHubError(err, owner, repo, "Get workflow run")
 	}
 
 	var foundRun *ghapi.WorkflowRun
@@ -260,5 +287,146 @@ func runRunsGet(cmd *cobra.Command, args []string) error {
 		fmt.Printf("\n🔗 %s\n", *foundRun.HTMLURL)
 	}
 
+	return nil
+}
+
+func newRunsDeleteCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "delete [owner/repo]",
+		Short: "Delete GitHub workflow runs interactively",
+		Long: `Delete GitHub workflow runs with interactive selection.
+
+If no repository is provided, it will be detected from the current git directory.
+
+Examples:
+  ops-cli github runs delete octocat/Hello-World
+  ops-cli github runs delete  # Uses current git repository`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: runRunsDelete,
+	}
+
+	return cmd
+}
+
+func runRunsDelete(cmd *cobra.Command, args []string) error {
+	repoPath, err := getRepoArg(args, 0)
+	if err != nil {
+		return err
+	}
+
+	if !strings.Contains(repoPath, "/") {
+		return fmt.Errorf("please provide a repository in format 'owner/repo'")
+	}
+
+	parts := strings.Split(repoPath, "/")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid repository format. Use 'owner/repo'")
+	}
+
+	owner := parts[0]
+	repo := parts[1]
+
+	client, err := getGitHubClient()
+	if err != nil {
+		return err
+	}
+
+	// List all workflow runs
+	stopSpinner := ui.StartSpinner(fmt.Sprintf("Fetching workflow runs for %s...", repoPath))
+	runs, err := client.ListWorkflowRuns(owner, repo, 100, 1)
+	stopSpinner()
+	if err != nil {
+		return handleGitHubError(err, owner, repo, "List workflow runs")
+	}
+
+	if len(runs) == 0 {
+		fmt.Println("No workflow runs found to delete.")
+		return nil
+	}
+
+	// Build selection options
+	choices := make([]string, len(runs))
+	for i, run := range runs {
+		name := ""
+		if run.Name != nil {
+			name = *run.Name
+		}
+		headBranch := ""
+		if run.HeadBranch != nil {
+			headBranch = *run.HeadBranch
+		}
+		status := ""
+		if run.Status != nil {
+			status = *run.Status
+		}
+		conclusion := ""
+		if run.Conclusion != nil {
+			conclusion = *run.Conclusion
+		}
+		runNumber := 0
+		if run.RunNumber != nil {
+			runNumber = *run.RunNumber
+		}
+		statusStr := status
+		if conclusion != "" {
+			statusStr = fmt.Sprintf("%s (%s)", status, conclusion)
+		}
+		choices[i] = fmt.Sprintf("• Run #%d: %s - %s [%s]", runNumber, name, headBranch, statusStr)
+	}
+
+	var selectedIndices []int
+	prompt := &survey.MultiSelect{
+		Message: "Select workflow runs to delete:",
+		Options: choices,
+	}
+	if err := survey.AskOne(prompt, &selectedIndices); err != nil {
+		return fmt.Errorf("selection cancelled: %w", err)
+	}
+
+	if len(selectedIndices) == 0 {
+		fmt.Println("No workflow runs selected for deletion.")
+		return nil
+	}
+
+	// Confirm deletion
+	confirm := false
+	confirmPrompt := &survey.Confirm{
+		Message: fmt.Sprintf("Are you sure you want to delete %d workflow run(s)? This action cannot be undone.", len(selectedIndices)),
+		Default: false,
+	}
+	if err := survey.AskOne(confirmPrompt, &confirm); err != nil {
+		return fmt.Errorf("confirmation cancelled: %w", err)
+	}
+
+	if !confirm {
+		fmt.Println("Deletion cancelled.")
+		return nil
+	}
+
+	// Delete selected runs
+	fmt.Printf("\nDeleting %d workflow run(s)...\n", len(selectedIndices))
+	for _, idx := range selectedIndices {
+		run := runs[idx]
+		runID := int64(0)
+		if run.ID != nil {
+			runID = *run.ID
+		}
+		runNumber := 0
+		if run.RunNumber != nil {
+			runNumber = *run.RunNumber
+		}
+
+		stopSpinner := ui.StartSpinner(fmt.Sprintf("Deleting workflow run #%d...", runNumber))
+		err := client.DeleteWorkflowRun(owner, repo, runID)
+		stopSpinner()
+
+		if err != nil {
+			fmt.Printf("✗ Failed to delete workflow run #%d: %v\n", runNumber, err)
+		} else {
+			fmt.Printf("✓ Deleted workflow run #%d\n", runNumber)
+		}
+	}
+
+	fmt.Println("\n✓ Deletion completed!")
 	return nil
 }

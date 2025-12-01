@@ -12,14 +12,17 @@ import (
 
 func newRepoCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "repo <owner/repo>",
+		Use:   "repo [owner/repo]",
 		Short: "Get a specific GitHub repository",
 		Long: `Get detailed information about a specific GitHub repository.
 
+If no repository is provided, it will be detected from the current git directory.
+
 Examples:
   ops-cli github repo octocat/Hello-World
-  ops-cli github repo github/docs --format json`,
-		Args: cobra.ExactArgs(1),
+  ops-cli github repo github/docs --format json
+  ops-cli github repo  # Uses current git repository`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: runRepo,
 	}
 
@@ -29,7 +32,11 @@ Examples:
 }
 
 func runRepo(cmd *cobra.Command, args []string) error {
-	repoPath := args[0]
+	repoPath, err := getRepoArg(args, 0)
+	if err != nil {
+		return err
+	}
+
 	if !strings.Contains(repoPath, "/") {
 		return fmt.Errorf("please provide a repository in format 'owner/repo'")
 	}
@@ -53,7 +60,7 @@ func runRepo(cmd *cobra.Command, args []string) error {
 	repository, err := client.GetRepository(owner, repo)
 	stopSpinner()
 	if err != nil {
-		return fmt.Errorf("failed to get repository: %w", err)
+		return handleGitHubError(err, owner, repo, "Get repository")
 	}
 
 	if format == "json" {

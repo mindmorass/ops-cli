@@ -12,14 +12,17 @@ import (
 
 func newWorkflowsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "workflows <owner/repo>",
+		Use:   "workflows [owner/repo]",
 		Short: "List GitHub workflows",
 		Long: `List GitHub workflows for a repository.
 
+If no repository is provided, it will be detected from the current git directory.
+
 Examples:
   ops-cli github workflows octocat/Hello-World
-  ops-cli github workflows github/docs --format json`,
-		Args: cobra.ExactArgs(1),
+  ops-cli github workflows github/docs --format json
+  ops-cli github workflows  # Uses current git repository`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: runWorkflows,
 	}
 
@@ -29,7 +32,11 @@ Examples:
 }
 
 func runWorkflows(cmd *cobra.Command, args []string) error {
-	repoPath := args[0]
+	repoPath, err := getRepoArg(args, 0)
+	if err != nil {
+		return err
+	}
+
 	if !strings.Contains(repoPath, "/") {
 		return fmt.Errorf("please provide a repository in format 'owner/repo'")
 	}
@@ -53,7 +60,7 @@ func runWorkflows(cmd *cobra.Command, args []string) error {
 	workflows, err := client.ListWorkflows(owner, repo)
 	stopSpinner()
 	if err != nil {
-		return fmt.Errorf("failed to list workflows: %w", err)
+		return handleGitHubError(err, owner, repo, "List workflows")
 	}
 
 	if len(workflows) == 0 {

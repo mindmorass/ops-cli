@@ -18,6 +18,7 @@ Plugins are installed in the XDG config directory ($XDG_CONFIG_HOME/ops-cli/plug
 	pluginCmd.AddCommand(newListCmd())
 	pluginCmd.AddCommand(newInstallCmd())
 	pluginCmd.AddCommand(newUninstallCmd())
+	pluginCmd.AddCommand(newUpdateCmd())
 
 	rootCmd.AddCommand(pluginCmd)
 }

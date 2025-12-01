@@ -11,15 +11,19 @@ import (
 
 func newContentsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "contents <owner/repo> [path]",
+		Use:   "contents [owner/repo] [path]",
 		Short: "List repository contents",
 		Long: `List the contents of a GitHub repository directory.
+
+If no repository is provided, it will be detected from the current git directory.
 
 Examples:
   ops-cli github contents octocat/Hello-World
   ops-cli github contents github/docs src
-  ops-cli github contents microsoft/vscode --ref main`,
-		Args: cobra.MinimumNArgs(1),
+  ops-cli github contents microsoft/vscode --ref main
+  ops-cli github contents  # Uses current git repository
+  ops-cli github contents src  # Uses current git repository, lists src directory`,
+		Args: cobra.MaximumNArgs(2),
 		RunE: runContents,
 	}
 
@@ -30,10 +34,31 @@ Examples:
 }
 
 func runContents(cmd *cobra.Command, args []string) error {
-	repoPath := args[0]
-	path := ""
-	if len(args) > 1 {
-		path = args[1]
+	var repoPath, path string
+	var err error
+
+	// Determine if first arg is repo or path
+	if len(args) > 0 {
+		if strings.Contains(args[0], "/") {
+			// First arg is a repository
+			repoPath = args[0]
+			if len(args) > 1 {
+				path = args[1]
+			}
+		} else {
+			// First arg might be a path, try to detect repo from git
+			repoPath, err = getRepoArg(args, 0)
+			if err != nil {
+				return err
+			}
+			path = args[0]
+		}
+	} else {
+		// No args, detect repo from git
+		repoPath, err = getRepoArg(args, 0)
+		if err != nil {
+			return err
+		}
 	}
 
 	if !strings.Contains(repoPath, "/") {
@@ -60,7 +85,7 @@ func runContents(cmd *cobra.Command, args []string) error {
 	contents, err := client.ListRepositoryContents(owner, repo, path, ref)
 	stopSpinner()
 	if err != nil {
-		return fmt.Errorf("failed to list contents: %w", err)
+		return handleGitHubError(err, owner, repo, "List contents")
 	}
 
 	if len(contents) == 0 {
