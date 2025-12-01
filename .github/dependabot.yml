@@ -1,0 +1,49 @@
+version: 2
+updates:
+  # Enable version updates for Go modules
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "go"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    # Group updates for related packages
+    groups:
+      github-actions:
+        patterns:
+          - "github.com/google/go-github*"
+      ui-libraries:
+        patterns:
+          - "github.com/AlecAivazis/survey*"
+          - "github.com/briandowns/spinner*"
+      config-libraries:
+        patterns:
+          - "github.com/spf13/*"
+          - "github.com/pelletier/go-toml*"
+      docker-libraries:
+        patterns:
+          - "github.com/docker/*"
+      jira-libraries:
+        patterns:
+          - "github.com/andygrunwald/go-jira*"
+      golang-org:
+        patterns:
+          - "golang.org/x/*"
+
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
