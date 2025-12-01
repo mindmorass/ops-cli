@@ -100,22 +100,14 @@ func runConfigSetup(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Authentication test passed! Authenticated as: %s\n", username)
 
-	// Save configuration
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+	// Save configuration to github.toml
+	githubCfg := &config.GitHubConfig{
+		Token:        token,
+		DefaultOwner: defaultUser,
+		APIURL:       "https://api.github.com",
 	}
 
-	if cfg.GitHub == nil {
-		cfg.GitHub = &config.GitHubConfig{}
-	}
-
-	cfg.GitHub.Token = token
-	if defaultUser != "" {
-		cfg.GitHub.DefaultOwner = defaultUser
-	}
-
-	if err := config.SaveConfig(cfg); err != nil {
+	if err := config.SaveGitHubConfig(githubCfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 

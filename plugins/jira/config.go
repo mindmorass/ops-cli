@@ -49,37 +49,20 @@ func newConfigSetupCmd() *cobra.Command {
 			fmt.Print("Atlassian API Token: ")
 			fmt.Scanln(&token)
 
-			// Load config
-			cfg, err := config.LoadConfig()
-			if err != nil {
-				// Try to create default
-				manager := config.GetConfigManager()
-				if err := manager.CreateDefault(); err != nil {
-					return fmt.Errorf("failed to create default config: %w", err)
-				}
-				cfg, err = config.LoadConfig()
-				if err != nil {
-					return fmt.Errorf("failed to load config: %w", err)
-				}
+			// Save configuration to jira.toml
+			jiraCfg := &config.JiraConfig{
+				BaseURL:        baseURL,
+				Username:       username,
+				AtlassianToken: token,
 			}
 
-			// Update config
-			if cfg.Jira == nil {
-				cfg.Jira = &config.JiraConfig{}
-			}
-			cfg.Jira.BaseURL = baseURL
-			cfg.Jira.Username = username
-			cfg.Jira.AtlassianToken = token
-
-			// Save config
-			manager := config.GetConfigManager()
-			manager.Update(cfg)
-			if err := manager.Save(); err != nil {
+			if err := config.SaveJiraConfig(jiraCfg); err != nil {
 				return fmt.Errorf("failed to save config: %w", err)
 			}
 
 			fmt.Println()
 			fmt.Println("Configuration saved successfully!")
+			manager := config.NewCommandConfigManager("jira")
 			fmt.Printf("Config file: %s\n", manager.GetConfigPath())
 
 			return nil
@@ -101,21 +84,12 @@ func newConfigShowCmd() *cobra.Command {
 			fmt.Println("==================")
 			fmt.Println()
 
-			// Get credentials with fallback to Atlassian config
+			// Get credentials from Jira config
 			baseURL, username, token := cfg.GetJiraCredentials()
 
 			if baseURL == "" && username == "" && token == "" {
 				fmt.Println("No Jira configuration found.")
-				if cfg.Atlassian != nil {
-					fmt.Println("\nNote: Atlassian shared config is available but not used for Jira.")
-				}
 				return nil
-			}
-
-			// Show source of configuration
-			if cfg.Atlassian != nil && (cfg.Jira == nil || cfg.Jira.BaseURL == "" || cfg.Jira.Username == "" || cfg.Jira.AtlassianToken == "") {
-				fmt.Println("(Using shared Atlassian configuration)")
-				fmt.Println()
 			}
 
 			fmt.Printf("Base URL: %s\n", baseURL)
@@ -170,10 +144,10 @@ func newConfigTestCmd() *cobra.Command {
 			}
 
 			if baseURL == "" {
-				return fmt.Errorf("Jira base URL not configured. Run 'ops-cli jira config setup' or 'ops-cli atlassian config setup'")
+				return fmt.Errorf("Jira base URL not configured. Run 'ops-cli jira config setup'")
 			}
 			if username == "" || token == "" {
-				return fmt.Errorf("Jira credentials not configured. Run 'ops-cli jira config setup' or 'ops-cli atlassian config setup'")
+				return fmt.Errorf("Jira credentials not configured. Run 'ops-cli jira config setup'")
 			}
 
 			fmt.Printf("Testing connection to %s...\n", baseURL)

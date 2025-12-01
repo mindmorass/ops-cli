@@ -15,7 +15,7 @@ func getConfluenceClient() (*confluence.Client, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Get credentials with fallback to Atlassian config
+	// Get credentials from Confluence config
 	baseURL, username, token := cfg.GetConfluenceCredentials()
 
 	// Environment variables take precedence
@@ -30,10 +30,10 @@ func getConfluenceClient() (*confluence.Client, error) {
 	}
 
 	if baseURL == "" {
-		return nil, fmt.Errorf("Confluence base URL not configured. Run 'ops-cli confluence config setup' or 'ops-cli atlassian config setup'")
+		return nil, fmt.Errorf("Confluence base URL not configured. Run 'ops-cli confluence config setup'")
 	}
 	if username == "" || token == "" {
-		return nil, fmt.Errorf("Confluence credentials not configured. Run 'ops-cli confluence config setup' or 'ops-cli atlassian config setup'")
+		return nil, fmt.Errorf("Confluence credentials not configured. Run 'ops-cli confluence config setup'")
 	}
 
 	return confluence.NewClient(baseURL, username, token)

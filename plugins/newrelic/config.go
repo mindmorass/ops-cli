@@ -123,23 +123,16 @@ func runConfigSetup(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Test query returned: %d result(s)\n", len(result.Results))
 	}
 
-	// Save configuration
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+	// Save configuration to newrelic.toml
+	newrelicCfg := &config.NewRelicConfig{
+		APIKey:       apiKey,
+		AccountID:    accountID,
+		DefaultQuery: defaultQuery,
+		LogLevel:     "info",
+		Region:       region,
 	}
 
-	if cfg.NewRelic == nil {
-		cfg.NewRelic = &config.NewRelicConfig{}
-	}
-
-	cfg.NewRelic.APIKey = apiKey
-	cfg.NewRelic.AccountID = accountID
-	cfg.NewRelic.DefaultQuery = defaultQuery
-	cfg.NewRelic.LogLevel = "info"
-	cfg.NewRelic.Region = region
-
-	if err := config.SaveConfig(cfg); err != nil {
+	if err := config.SaveNewRelicConfig(newrelicCfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 

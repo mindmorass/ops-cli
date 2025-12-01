@@ -104,21 +104,14 @@ func runConfigSetup(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Successfully connected as: %s (%s)\n", user.DisplayName, user.Email)
 
-	// Save configuration
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+	// Save configuration to confluence.toml
+	confluenceCfg := &config.ConfluenceConfig{
+		BaseURL:        baseURL,
+		Username:       username,
+		AtlassianToken: token,
 	}
 
-	if cfg.Confluence == nil {
-		cfg.Confluence = &config.ConfluenceConfig{}
-	}
-
-	cfg.Confluence.BaseURL = baseURL
-	cfg.Confluence.Username = username
-	cfg.Confluence.AtlassianToken = token
-
-	if err := config.SaveConfig(cfg); err != nil {
+	if err := config.SaveConfluenceConfig(confluenceCfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
@@ -145,21 +138,15 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Get credentials with fallback to Atlassian config
+	// Get credentials from Confluence config
 	baseURL, username, token := cfg.GetConfluenceCredentials()
 
 	if baseURL == "" && username == "" && token == "" {
-		fmt.Println("Confluence not configured. Run 'ops-cli confluence config setup' or 'ops-cli atlassian config setup'")
+		fmt.Println("Confluence not configured. Run 'ops-cli confluence config setup'")
 		return nil
 	}
 
 	fmt.Println("Current Confluence Configuration:\n")
-
-	// Show source of configuration
-	if cfg.Atlassian != nil && (cfg.Confluence == nil || cfg.Confluence.BaseURL == "" || cfg.Confluence.Username == "" || cfg.Confluence.AtlassianToken == "") {
-		fmt.Println("(Using shared Atlassian configuration)")
-		fmt.Println()
-	}
 
 	fmt.Printf("Base URL:      %s\n", baseURL)
 	fmt.Printf("Username:      %s\n", username)

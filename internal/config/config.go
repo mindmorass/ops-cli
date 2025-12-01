@@ -14,7 +14,6 @@ import (
 // AppConfig represents the application configuration structure
 type AppConfig struct {
 	Version         string                 `toml:"version"`
-	Atlassian       *AtlassianConfig       `toml:"atlassian,omitempty"`
 	Jira            *JiraConfig            `toml:"jira,omitempty"`
 	GitHub          *GitHubConfig          `toml:"github,omitempty"`
 	Confluence      *ConfluenceConfig      `toml:"confluence,omitempty"`
@@ -25,20 +24,11 @@ type AppConfig struct {
 	Startpage       map[string]interface{} `toml:"startpage,omitempty"`
 }
 
-// AtlassianConfig holds shared Atlassian API configuration
-// Used by both Jira and Confluence
-type AtlassianConfig struct {
+// JiraConfig holds Jira API configuration
+type JiraConfig struct {
 	BaseURL        string `toml:"base_url"`
 	Username       string `toml:"username"`
 	AtlassianToken string `toml:"atlassian_token"`
-}
-
-// JiraConfig holds Jira API configuration
-// If Atlassian config is set, these fields override the shared config
-type JiraConfig struct {
-	BaseURL        string `toml:"base_url"`        // Overrides Atlassian base_url if set
-	Username       string `toml:"username"`        // Overrides Atlassian username if set
-	AtlassianToken string `toml:"atlassian_token"` // Overrides Atlassian token if set
 	DefaultProject string `toml:"default_project"` // Jira-specific
 }
 
@@ -50,11 +40,10 @@ type GitHubConfig struct {
 }
 
 // ConfluenceConfig holds Confluence API configuration
-// If Atlassian config is set, these fields override the shared config
 type ConfluenceConfig struct {
-	BaseURL        string `toml:"base_url"`        // Overrides Atlassian base_url if set
-	Username       string `toml:"username"`        // Overrides Atlassian username if set
-	AtlassianToken string `toml:"atlassian_token"` // Overrides Atlassian token if set
+	BaseURL        string `toml:"base_url"`
+	Username       string `toml:"username"`
+	AtlassianToken string `toml:"atlassian_token"`
 }
 
 // NewRelicConfig holds New Relic API configuration
@@ -232,18 +221,39 @@ func (cm *ConfigManager) Update(updates *AppConfig) {
 		}
 	}
 
-	if updates.Atlassian != nil {
-		if cm.config.Atlassian == nil {
-			cm.config.Atlassian = &AtlassianConfig{}
+	if updates.Confluence != nil {
+		if cm.config.Confluence == nil {
+			cm.config.Confluence = &ConfluenceConfig{}
 		}
-		if updates.Atlassian.BaseURL != "" {
-			cm.config.Atlassian.BaseURL = updates.Atlassian.BaseURL
+		if updates.Confluence.BaseURL != "" {
+			cm.config.Confluence.BaseURL = updates.Confluence.BaseURL
 		}
-		if updates.Atlassian.Username != "" {
-			cm.config.Atlassian.Username = updates.Atlassian.Username
+		if updates.Confluence.Username != "" {
+			cm.config.Confluence.Username = updates.Confluence.Username
 		}
-		if updates.Atlassian.AtlassianToken != "" {
-			cm.config.Atlassian.AtlassianToken = updates.Atlassian.AtlassianToken
+		if updates.Confluence.AtlassianToken != "" {
+			cm.config.Confluence.AtlassianToken = updates.Confluence.AtlassianToken
+		}
+	}
+
+	if updates.NewRelic != nil {
+		if cm.config.NewRelic == nil {
+			cm.config.NewRelic = &NewRelicConfig{}
+		}
+		if updates.NewRelic.APIKey != "" {
+			cm.config.NewRelic.APIKey = updates.NewRelic.APIKey
+		}
+		if updates.NewRelic.AccountID != "" {
+			cm.config.NewRelic.AccountID = updates.NewRelic.AccountID
+		}
+		if updates.NewRelic.DefaultQuery != "" {
+			cm.config.NewRelic.DefaultQuery = updates.NewRelic.DefaultQuery
+		}
+		if updates.NewRelic.LogLevel != "" {
+			cm.config.NewRelic.LogLevel = updates.NewRelic.LogLevel
+		}
+		if updates.NewRelic.Region != "" {
+			cm.config.NewRelic.Region = updates.NewRelic.Region
 		}
 	}
 
@@ -256,6 +266,34 @@ func (cm *ConfigManager) Update(updates *AppConfig) {
 		}
 		cm.config.Output.NoColor = updates.Output.NoColor
 		cm.config.Output.Verbose = updates.Output.Verbose
+	}
+
+	// Merge map-based configs (DevTools, PackageManagers, Startpage)
+	if updates.DevTools != nil {
+		if cm.config.DevTools == nil {
+			cm.config.DevTools = make(map[string]interface{})
+		}
+		for k, v := range updates.DevTools {
+			cm.config.DevTools[k] = v
+		}
+	}
+
+	if updates.PackageManagers != nil {
+		if cm.config.PackageManagers == nil {
+			cm.config.PackageManagers = make(map[string]interface{})
+		}
+		for k, v := range updates.PackageManagers {
+			cm.config.PackageManagers[k] = v
+		}
+	}
+
+	if updates.Startpage != nil {
+		if cm.config.Startpage == nil {
+			cm.config.Startpage = make(map[string]interface{})
+		}
+		for k, v := range updates.Startpage {
+			cm.config.Startpage[k] = v
+		}
 	}
 }
 
@@ -284,11 +322,6 @@ func (cm *ConfigManager) Exists() bool {
 func (cm *ConfigManager) CreateDefault() error {
 	cm.config = &AppConfig{
 		Version: "1.0.0",
-		Atlassian: &AtlassianConfig{
-			BaseURL:        "",
-			Username:       "",
-			AtlassianToken: "",
-		},
 		Jira: &JiraConfig{
 			DefaultProject: "",
 		},
@@ -318,116 +351,230 @@ func GetConfigManager() *ConfigManager {
 	return globalConfigManager
 }
 
-// LoadConfig loads the global configuration
-func LoadConfig() (*AppConfig, error) {
-	manager := GetConfigManager()
-	if err := manager.Load(); err != nil {
-		return nil, err
+// NewCommandConfigManager creates a config manager for a command-specific config file
+func NewCommandConfigManager(commandName string) *ConfigManager {
+	appName := getAppName()
+	xdg := core.NewXDGPaths(appName)
+
+	configFile, err := xdg.ConfigFile(commandName + ".toml")
+	if err != nil {
+		// Fallback to old method if XDG fails
+		configDir := getConfigDir()
+		configFile = filepath.Join(configDir, commandName+".toml")
 	}
+
+	v := viper.New()
+	v.SetConfigType("toml")
+	v.SetConfigFile(configFile)
+
+	// Set environment variable support
+	v.SetEnvPrefix("OPS_CLI")
+	v.AutomaticEnv()
+
+	return &ConfigManager{
+		configFile: configFile,
+		appName:    appName,
+		viper:      v,
+		config:     &AppConfig{},
+	}
+}
+
+// LoadCommandConfig loads a command-specific configuration
+func LoadCommandConfig(commandName string) (*AppConfig, error) {
+	manager := NewCommandConfigManager(commandName)
+	// Try to read config file
+	data, err := os.ReadFile(manager.configFile)
+	if err != nil {
+		// If file doesn't exist, return empty config (not an error)
+		if os.IsNotExist(err) {
+			return &AppConfig{}, nil
+		}
+		return nil, fmt.Errorf("failed to read config: %w", err)
+	}
+
+	// Unmarshal TOML directly
+	if err := toml.Unmarshal(data, manager.config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
 	return manager.Get(), nil
 }
 
-// SaveConfig saves the global configuration
-func SaveConfig(cfg *AppConfig) error {
-	manager := GetConfigManager()
+// SaveCommandConfig saves a command-specific configuration
+func SaveCommandConfig(commandName string, cfg *AppConfig) error {
+	manager := NewCommandConfigManager(commandName)
 	manager.config = cfg
 	return manager.Save()
 }
 
-// GetAtlassianCredentials returns Atlassian credentials with fallback logic
-// Checks individual config first, then falls back to shared Atlassian config
-func (cfg *AppConfig) GetAtlassianCredentials() (baseURL, username, token string) {
-	// Try to get from individual configs first (for backward compatibility)
-	// Then fall back to shared Atlassian config
+// LoadConfig loads the global configuration from both shared and command-specific files
+func LoadConfig() (*AppConfig, error) {
+	// Load shared config (main config.toml)
+	sharedManager := GetConfigManager()
+	if err := sharedManager.Load(); err != nil {
+		// If shared config doesn't exist, create default
+		if os.IsNotExist(err) {
+			if err := sharedManager.CreateDefault(); err != nil {
+				return nil, fmt.Errorf("failed to create default config: %w", err)
+			}
+		} else {
+			return nil, err
+		}
+	}
+	sharedConfig := sharedManager.Get()
 
-	// For Jira
-	if cfg.Jira != nil {
-		if cfg.Jira.BaseURL != "" {
-			baseURL = cfg.Jira.BaseURL
+	// Merge command-specific configs
+	// Load each command config and merge into shared config
+	commands := []string{"github", "jira", "confluence", "newrelic"}
+	for _, cmd := range commands {
+		cmdConfig, err := LoadCommandConfig(cmd)
+		if err != nil {
+			// Skip if file doesn't exist
+			continue
 		}
-		if cfg.Jira.Username != "" {
-			username = cfg.Jira.Username
-		}
-		if cfg.Jira.AtlassianToken != "" {
-			token = cfg.Jira.AtlassianToken
+
+		// Merge command-specific config into shared config
+		switch cmd {
+		case "github":
+			if cmdConfig.GitHub != nil {
+				if sharedConfig.GitHub == nil {
+					sharedConfig.GitHub = &GitHubConfig{}
+				}
+				if cmdConfig.GitHub.Token != "" {
+					sharedConfig.GitHub.Token = cmdConfig.GitHub.Token
+				}
+				if cmdConfig.GitHub.DefaultOwner != "" {
+					sharedConfig.GitHub.DefaultOwner = cmdConfig.GitHub.DefaultOwner
+				}
+				if cmdConfig.GitHub.APIURL != "" {
+					sharedConfig.GitHub.APIURL = cmdConfig.GitHub.APIURL
+				}
+			}
+		case "jira":
+			if cmdConfig.Jira != nil {
+				if sharedConfig.Jira == nil {
+					sharedConfig.Jira = &JiraConfig{}
+				}
+				if cmdConfig.Jira.BaseURL != "" {
+					sharedConfig.Jira.BaseURL = cmdConfig.Jira.BaseURL
+				}
+				if cmdConfig.Jira.Username != "" {
+					sharedConfig.Jira.Username = cmdConfig.Jira.Username
+				}
+				if cmdConfig.Jira.AtlassianToken != "" {
+					sharedConfig.Jira.AtlassianToken = cmdConfig.Jira.AtlassianToken
+				}
+				if cmdConfig.Jira.DefaultProject != "" {
+					sharedConfig.Jira.DefaultProject = cmdConfig.Jira.DefaultProject
+				}
+			}
+		case "confluence":
+			if cmdConfig.Confluence != nil {
+				if sharedConfig.Confluence == nil {
+					sharedConfig.Confluence = &ConfluenceConfig{}
+				}
+				if cmdConfig.Confluence.BaseURL != "" {
+					sharedConfig.Confluence.BaseURL = cmdConfig.Confluence.BaseURL
+				}
+				if cmdConfig.Confluence.Username != "" {
+					sharedConfig.Confluence.Username = cmdConfig.Confluence.Username
+				}
+				if cmdConfig.Confluence.AtlassianToken != "" {
+					sharedConfig.Confluence.AtlassianToken = cmdConfig.Confluence.AtlassianToken
+				}
+			}
+		case "newrelic":
+			if cmdConfig.NewRelic != nil {
+				if sharedConfig.NewRelic == nil {
+					sharedConfig.NewRelic = &NewRelicConfig{}
+				}
+				if cmdConfig.NewRelic.APIKey != "" {
+					sharedConfig.NewRelic.APIKey = cmdConfig.NewRelic.APIKey
+				}
+				if cmdConfig.NewRelic.AccountID != "" {
+					sharedConfig.NewRelic.AccountID = cmdConfig.NewRelic.AccountID
+				}
+				if cmdConfig.NewRelic.DefaultQuery != "" {
+					sharedConfig.NewRelic.DefaultQuery = cmdConfig.NewRelic.DefaultQuery
+				}
+				if cmdConfig.NewRelic.LogLevel != "" {
+					sharedConfig.NewRelic.LogLevel = cmdConfig.NewRelic.LogLevel
+				}
+				if cmdConfig.NewRelic.Region != "" {
+					sharedConfig.NewRelic.Region = cmdConfig.NewRelic.Region
+				}
+			}
 		}
 	}
 
-	// For Confluence
-	if cfg.Confluence != nil {
-		if baseURL == "" && cfg.Confluence.BaseURL != "" {
-			baseURL = cfg.Confluence.BaseURL
-		}
-		if username == "" && cfg.Confluence.Username != "" {
-			username = cfg.Confluence.Username
-		}
-		if token == "" && cfg.Confluence.AtlassianToken != "" {
-			token = cfg.Confluence.AtlassianToken
-		}
-	}
-
-	// Fall back to shared Atlassian config
-	if cfg.Atlassian != nil {
-		if baseURL == "" {
-			baseURL = cfg.Atlassian.BaseURL
-		}
-		if username == "" {
-			username = cfg.Atlassian.Username
-		}
-		if token == "" {
-			token = cfg.Atlassian.AtlassianToken
-		}
-	}
-
-	return baseURL, username, token
+	return sharedConfig, nil
 }
 
-// GetJiraCredentials returns Jira credentials with fallback to Atlassian config
+// SaveConfig saves the global configuration by merging with existing config
+// This ensures existing data is not lost when updating configuration
+// DEPRECATED: Use SaveCommandConfig for command-specific configs instead
+func SaveConfig(cfg *AppConfig) error {
+	manager := GetConfigManager()
+	
+	// Load existing config first to preserve all data
+	if err := manager.Load(); err != nil {
+		// If config doesn't exist, create default first
+		if os.IsNotExist(err) {
+			if err := manager.CreateDefault(); err != nil {
+				return fmt.Errorf("failed to create default config: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to load existing config: %w", err)
+		}
+	}
+	
+	// Merge the updates with existing config
+	manager.Update(cfg)
+	
+	// Save the merged config
+	return manager.Save()
+}
+
+// SaveGitHubConfig saves GitHub configuration to github.toml
+func SaveGitHubConfig(cfg *GitHubConfig) error {
+	appCfg := &AppConfig{GitHub: cfg}
+	return SaveCommandConfig("github", appCfg)
+}
+
+// SaveJiraConfig saves Jira configuration to jira.toml
+func SaveJiraConfig(cfg *JiraConfig) error {
+	appCfg := &AppConfig{Jira: cfg}
+	return SaveCommandConfig("jira", appCfg)
+}
+
+// SaveConfluenceConfig saves Confluence configuration to confluence.toml
+func SaveConfluenceConfig(cfg *ConfluenceConfig) error {
+	appCfg := &AppConfig{Confluence: cfg}
+	return SaveCommandConfig("confluence", appCfg)
+}
+
+// SaveNewRelicConfig saves NewRelic configuration to newrelic.toml
+func SaveNewRelicConfig(cfg *NewRelicConfig) error {
+	appCfg := &AppConfig{NewRelic: cfg}
+	return SaveCommandConfig("newrelic", appCfg)
+}
+
+// GetJiraCredentials returns Jira credentials from Jira config
 func (cfg *AppConfig) GetJiraCredentials() (baseURL, username, token string) {
-	// Check Jira-specific config first
 	if cfg.Jira != nil {
 		baseURL = cfg.Jira.BaseURL
 		username = cfg.Jira.Username
 		token = cfg.Jira.AtlassianToken
 	}
-
-	// Fall back to shared Atlassian config
-	if cfg.Atlassian != nil {
-		if baseURL == "" {
-			baseURL = cfg.Atlassian.BaseURL
-		}
-		if username == "" {
-			username = cfg.Atlassian.Username
-		}
-		if token == "" {
-			token = cfg.Atlassian.AtlassianToken
-		}
-	}
-
 	return baseURL, username, token
 }
 
-// GetConfluenceCredentials returns Confluence credentials with fallback to Atlassian config
+// GetConfluenceCredentials returns Confluence credentials from Confluence config
 func (cfg *AppConfig) GetConfluenceCredentials() (baseURL, username, token string) {
-	// Check Confluence-specific config first
 	if cfg.Confluence != nil {
 		baseURL = cfg.Confluence.BaseURL
 		username = cfg.Confluence.Username
 		token = cfg.Confluence.AtlassianToken
 	}
-
-	// Fall back to shared Atlassian config
-	if cfg.Atlassian != nil {
-		if baseURL == "" {
-			baseURL = cfg.Atlassian.BaseURL
-		}
-		if username == "" {
-			username = cfg.Atlassian.Username
-		}
-		if token == "" {
-			token = cfg.Atlassian.AtlassianToken
-		}
-	}
-
 	return baseURL, username, token
 }

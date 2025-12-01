@@ -82,7 +82,7 @@ func runMarkdown(cmd *cobra.Command, args []string) error {
 	}
 
 	if baseURL == "" || username == "" || token == "" {
-		return fmt.Errorf("Confluence credentials not configured. Run 'ops-cli confluence config setup' or 'ops-cli atlassian config setup'")
+		return fmt.Errorf("Confluence credentials not configured. Run 'ops-cli confluence config setup'")
 	}
 
 	// Get required flags

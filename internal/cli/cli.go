@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"github.com/ops-cli/cmd/atlassian"
 	"github.com/ops-cli/cmd/devtools"
 	"github.com/ops-cli/cmd/docker"
 	"github.com/ops-cli/cmd/github"
@@ -15,7 +14,6 @@ import (
 // RegisterModules registers all CLI modules with the root command
 func RegisterModules(rootCmd *cobra.Command) {
 	// Register all core modules
-	atlassian.Register(rootCmd)
 	github.Register(rootCmd)
 	startpage.Register(rootCmd)
 	devtools.Register(rootCmd)

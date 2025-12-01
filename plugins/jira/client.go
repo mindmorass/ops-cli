@@ -15,7 +15,7 @@ func getJiraClient() (*jira.Client, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Get credentials with fallback to Atlassian config
+	// Get credentials from Jira config
 	baseURL, username, token := cfg.GetJiraCredentials()
 
 	// Environment variables take precedence
@@ -30,10 +30,10 @@ func getJiraClient() (*jira.Client, error) {
 	}
 
 	if baseURL == "" {
-		return nil, fmt.Errorf("Jira base URL not configured. Run 'ops-cli jira config setup' or 'ops-cli atlassian config setup'")
+		return nil, fmt.Errorf("Jira base URL not configured. Run 'ops-cli jira config setup'")
 	}
 	if username == "" || token == "" {
-		return nil, fmt.Errorf("Jira credentials not configured. Run 'ops-cli jira config setup' or 'ops-cli atlassian config setup'")
+		return nil, fmt.Errorf("Jira credentials not configured. Run 'ops-cli jira config setup'")
 	}
 
 	return jira.NewClient(baseURL, username, token)
