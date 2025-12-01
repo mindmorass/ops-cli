@@ -8,7 +8,7 @@ require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/andygrunwald/go-jira v1.17.0
 	github.com/briandowns/spinner v1.23.0
-	github.com/docker/docker v25.0.5+incompatible
+	github.com/docker/docker v28.5.2+incompatible
 	github.com/google/go-github/v55 v55.0.0
 	github.com/pelletier/go-toml/v2 v2.1.1
 	github.com/spf13/cobra v1.8.0
@@ -20,6 +20,8 @@ require (
 	github.com/Microsoft/go-winio v0.4.21 // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20230217124315-7d5c6f04bbb8 // indirect
 	github.com/cloudflare/circl v1.3.3 // indirect
+	github.com/containerd/errdefs v1.0.0 // indirect
+	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/creack/pty v1.1.18 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
@@ -31,7 +33,6 @@ require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
@@ -42,6 +43,8 @@ require (
 	github.com/mattn/go-isatty v0.0.17 // indirect
 	github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
+	github.com/moby/docker-image-spec v1.3.1 // indirect
+	github.com/moby/sys/atomicwriter v0.1.0 // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
