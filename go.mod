@@ -7,7 +7,7 @@ toolchain go1.24.4
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/andygrunwald/go-jira v1.17.0
-	github.com/briandowns/spinner v1.23.0
+	github.com/briandowns/spinner v1.23.2
 	github.com/docker/docker v25.0.5+incompatible
 	github.com/google/go-github/v55 v55.0.0
 	github.com/pelletier/go-toml/v2 v2.1.1
