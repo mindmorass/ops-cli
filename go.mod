@@ -13,7 +13,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
-	golang.org/x/oauth2 v0.33.0
+	golang.org/x/oauth2 v0.34.0
 )
 
 require (
